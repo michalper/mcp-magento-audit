@@ -1,0 +1,39 @@
+[project]
+name = "mcp-magento-audit"
+version = "0.1.0"
+description = "Serwer MCP do audytu projektow Magento: zgodnosc aktualizacji, jakosc modulow, bezpieczenstwo zaleznosci"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Michal Per" }]
+keywords = ["mcp", "magento", "composer", "audit", "upgrade", "php"]
+dependencies = ["mcp>=2.3,<3"]
+
+[project.scripts]
+mcp-magento-audit = "mcp_magento_audit.server:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_magento_audit"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"

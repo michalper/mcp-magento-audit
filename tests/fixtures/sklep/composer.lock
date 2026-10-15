@@ -1,0 +1,9 @@
+{
+  "packages": [
+    { "name": "magento/product-community-edition", "version": "2.4.7", "require": { "php": "~8.2.0||~8.3.0" } },
+    { "name": "stary/modul", "version": "1.0.0", "require": { "php": "^7.4" }, "abandoned": true }
+  ],
+  "packages-dev": [
+    { "name": "phpunit/phpunit", "version": "9.6.0", "require": { "php": ">=7.3" } }
+  ]
+}
