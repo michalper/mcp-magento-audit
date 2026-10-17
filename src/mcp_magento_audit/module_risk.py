@@ -75,6 +75,7 @@ import json
 import re
 import subprocess
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -263,6 +264,23 @@ def _execute(
     return ToolRun(scanned=True, reason=None, target=target), issues
 
 
+def _run_filesystem_scan(
+    *,
+    target: str,
+    failure_label: str,
+    scan: Callable[[], tuple[Issue, ...]],
+) -> tuple[ToolRun, tuple[Issue, ...]]:
+    """Shared by the pure-Python checks (`object_manager_misuse`,
+    `core_overrides`): runs `scan`, converting an `OSError` into the same
+    `scanned=False` shape `_execute` gives the subprocess-based checks, so
+    neither caller hand-rolls the try/except itself."""
+    try:
+        issues = scan()
+    except OSError as e:
+        return ToolRun(scanned=False, reason=f"{failure_label}: {e}", target=""), ()
+    return ToolRun(scanned=True, reason=None, target=target), issues
+
+
 def _run_phpcs(project_path: Path) -> tuple[ToolRun, tuple[Issue, ...]]:
     config = _find_config(project_path, PHPCS_CONFIG_FILE_NAMES)
 
@@ -352,12 +370,13 @@ def _discover_vendor_modules(project_path: Path) -> list[Path] | None:
     except ProjectError:
         return None
 
+    vendor_root = (project_path / "vendor").resolve()
     targets = []
     for package in project.packages:
         if package.type != "magento2-module" or package.name.startswith("magento/"):
             continue
-        package_dir = project_path / "vendor" / package.name
-        if package_dir.is_dir():
+        package_dir = (project_path / "vendor" / package.name).resolve()
+        if vendor_root in package_dir.parents and package_dir.is_dir():
             targets.append(package_dir)
     return targets
 
@@ -394,8 +413,8 @@ def _scan_object_manager_misuse(project_path: Path) -> tuple[ToolRun, tuple[Issu
     if not target_dir.is_dir():
         return ToolRun(scanned=True, reason=None, target=FALLBACK_TARGET), ()
 
-    issues: list[Issue] = []
-    try:
+    def _scan() -> tuple[Issue, ...]:
+        issues: list[Issue] = []
         files = [
             f
             for ext in OBJECT_MANAGER_FILE_EXTENSIONS
@@ -420,11 +439,13 @@ def _scan_object_manager_misuse(project_path: Path) -> tuple[ToolRun, tuple[Issu
                         scope="app_code",
                     )
                 )
-    except OSError as e:
-        reason = f"could not scan {FALLBACK_TARGET}: {e}"
-        return ToolRun(scanned=False, reason=reason, target=""), ()
+        return tuple(issues)
 
-    return ToolRun(scanned=True, reason=None, target=FALLBACK_TARGET), tuple(issues)
+    return _run_filesystem_scan(
+        target=FALLBACK_TARGET,
+        failure_label=f"could not scan {FALLBACK_TARGET}",
+        scan=_scan,
+    )
 
 
 def _declared_classes(file_path: Path) -> list[tuple[str, str]]:
@@ -465,8 +486,8 @@ def _scan_core_overrides(project_path: Path) -> tuple[ToolRun, tuple[Issue, ...]
         reason = "no vendor/magento — can't tell whether app/code redeclares a core class"
         return ToolRun(scanned=False, reason=reason, target=""), ()
 
-    issues: list[Issue] = []
-    try:
+    def _scan() -> tuple[Issue, ...]:
+        issues: list[Issue] = []
         vendor_index = _index_classes_by_name(vendor_magento_dir)
         for app_file in app_code_dir.rglob("*.php"):
             if not app_file.is_file():
@@ -491,11 +512,13 @@ def _scan_core_overrides(project_path: Path) -> tuple[ToolRun, tuple[Issue, ...]
                             scope="app_code",
                         )
                     )
-    except OSError as e:
-        reason = f"could not scan for core overrides: {e}"
-        return ToolRun(scanned=False, reason=reason, target=""), ()
+        return tuple(issues)
 
-    return ToolRun(scanned=True, reason=None, target="app/code vs vendor/magento"), tuple(issues)
+    return _run_filesystem_scan(
+        target="app/code vs vendor/magento",
+        failure_label="could not scan for core overrides",
+        scan=_scan,
+    )
 
 
 def _cap(issues: tuple[Issue, ...]) -> tuple[Issue, ...]:
@@ -506,12 +529,26 @@ def _cap(issues: tuple[Issue, ...]) -> tuple[Issue, ...]:
 
 
 def scan(project_path: Path) -> ModuleRiskResult:
-    phpcs_run, phpcs_issues = _run_phpcs(project_path)
-    phpstan_run, phpstan_issues = _run_phpstan(project_path)
-    rector_run, rector_issues = _run_rector(project_path)
-    vendor_phpcs_run, vendor_packages, vendor_phpcs_issues = _run_vendor_phpcs(project_path)
-    object_manager_run, object_manager_issues = _scan_object_manager_misuse(project_path)
-    core_overrides_run, core_overrides_issues = _scan_core_overrides(project_path)
+    # All 6 checks are independent of one another (each only reads from
+    # project_path), so they run concurrently rather than strictly in
+    # sequence — the 3 subprocess-based checks release the GIL while
+    # waiting on phpcs/phpstan/rector, and the pure-Python regex scans don't
+    # contend with them, matching the fan-out already used by
+    # upgrade_plan.build()/fleet.overview().
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        phpcs_future = executor.submit(_run_phpcs, project_path)
+        phpstan_future = executor.submit(_run_phpstan, project_path)
+        rector_future = executor.submit(_run_rector, project_path)
+        vendor_phpcs_future = executor.submit(_run_vendor_phpcs, project_path)
+        object_manager_future = executor.submit(_scan_object_manager_misuse, project_path)
+        core_overrides_future = executor.submit(_scan_core_overrides, project_path)
+
+        phpcs_run, phpcs_issues = phpcs_future.result()
+        phpstan_run, phpstan_issues = phpstan_future.result()
+        rector_run, rector_issues = rector_future.result()
+        vendor_phpcs_run, vendor_packages, vendor_phpcs_issues = vendor_phpcs_future.result()
+        object_manager_run, object_manager_issues = object_manager_future.result()
+        core_overrides_run, core_overrides_issues = core_overrides_future.result()
 
     issue_count = (
         len(phpcs_issues)

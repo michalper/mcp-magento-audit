@@ -461,6 +461,22 @@ def test_vendor_phpcs_excludes_packages_without_an_installed_directory(tmp_path)
     assert result.vendor_packages == ()
 
 
+def test_vendor_phpcs_rejects_path_traversal_in_package_name(tmp_path):
+    # A composer.lock is project-controlled data, not necessarily trustworthy
+    # (e.g. an untrusted repo clone) — a crafted package name with ".." must
+    # not resolve to a directory outside vendor/.
+    outside = tmp_path.parent / "outside-secret"
+    outside.mkdir()
+    traversal_name = "../" * len(tmp_path.relative_to(tmp_path.anchor).parts) + "outside-secret"
+    _write_composer(
+        tmp_path, [{"name": traversal_name, "version": "1.0", "type": "magento2-module"}]
+    )
+
+    result = mr.scan(tmp_path)
+
+    assert result.vendor_packages == ()
+
+
 def test_vendor_phpcs_missing_binary_is_not_scanned(tmp_path):
     _write_composer(
         tmp_path, [{"name": "acme/module-foo", "version": "1.0", "type": "magento2-module"}]
