@@ -163,18 +163,18 @@ def _parse_phpcs_report(
     issues: list[Issue] = []
     for file_path, file_report in (report.get("files") or {}).items():
         relative = _relative(file_path, project_path)
-        for message in file_report.get("messages") or []:
-            issues.append(
-                Issue(
-                    tool="phpcs",
-                    file=relative,
-                    line=int(message.get("line") or 0),
-                    severity=str(message.get("type", "")).lower(),
-                    source=str(message.get("source", "")),
-                    message=str(message.get("message", "")),
-                    scope=scope,
-                )
+        issues.extend(
+            Issue(
+                tool="phpcs",
+                file=relative,
+                line=int(message.get("line") or 0),
+                severity=str(message.get("type", "")).lower(),
+                source=str(message.get("source", "")),
+                message=str(message.get("message", "")),
+                scope=scope,
             )
+            for message in file_report.get("messages") or []
+        )
     return tuple(issues)
 
 
@@ -183,17 +183,17 @@ def _parse_phpstan_report(stdout: str, project_path: Path) -> tuple[Issue, ...]:
     issues: list[Issue] = []
     for file_path, file_report in (report.get("files") or {}).items():
         relative = _relative(file_path, project_path)
-        for message in file_report.get("messages") or []:
-            issues.append(
-                Issue(
-                    tool="phpstan",
-                    file=relative,
-                    line=int(message.get("line") or 0),
-                    severity="error",
-                    source=str(message.get("identifier", "")),
-                    message=str(message.get("message", "")),
-                )
+        issues.extend(
+            Issue(
+                tool="phpstan",
+                file=relative,
+                line=int(message.get("line") or 0),
+                severity="error",
+                source=str(message.get("identifier", "")),
+                message=str(message.get("message", "")),
             )
+            for message in file_report.get("messages") or []
+        )
     # Generic errors not attached to a specific file (e.g. config problems,
     # autoload failures) — not tied to one module's code, but still a real
     # finding that would otherwise silently vanish.

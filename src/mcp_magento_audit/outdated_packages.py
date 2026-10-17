@@ -53,17 +53,15 @@ def _run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
 
 def _parse_report(stdout: str) -> tuple[OutdatedPackage, ...]:
     report: Any = _extract_json(stdout)
-    packages = []
-    for entry in report.get("installed") or []:
-        packages.append(
-            OutdatedPackage(
-                package=str(entry.get("name", "")),
-                current=str(entry.get("version", "")),
-                latest=str(entry.get("latest", "")),
-                status=str(entry.get("latest-status", "")),
-            )
+    return tuple(
+        OutdatedPackage(
+            package=str(entry.get("name", "")),
+            current=str(entry.get("version", "")),
+            latest=str(entry.get("latest", "")),
+            status=str(entry.get("latest-status", "")),
         )
-    return tuple(packages)
+        for entry in report.get("installed") or []
+    )
 
 
 def _empty(reason: str) -> OutdatedPackagesResult:

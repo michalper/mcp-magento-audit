@@ -39,7 +39,7 @@ def _fetch(url: str) -> str:
         url,
         headers={"User-Agent": "mcp-magento-audit", "Accept": "application/vnd.github+json"},
     )
-    with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310 # nosec B310
+    with urllib.request.urlopen(request, timeout=5) as response:  # nosec B310
         body: bytes = response.read()
         return body.decode("utf-8")
 

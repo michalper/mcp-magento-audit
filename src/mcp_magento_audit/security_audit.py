@@ -59,17 +59,17 @@ def _parse_report(stdout: str) -> tuple[Advisory, ...]:
     report: Any = _extract_json(stdout)
     advisories: list[Advisory] = []
     for package, entries in (report.get("advisories") or {}).items():
-        for entry in entries or []:
-            advisories.append(
-                Advisory(
-                    package=str(package),
-                    advisory_id=str(entry.get("advisoryId", "")),
-                    title=str(entry.get("title", "")),
-                    cve=entry.get("cve") or None,
-                    severity=entry.get("severity") or None,
-                    link=str(entry.get("link", "")),
-                )
+        advisories.extend(
+            Advisory(
+                package=str(package),
+                advisory_id=str(entry.get("advisoryId", "")),
+                title=str(entry.get("title", "")),
+                cve=entry.get("cve") or None,
+                severity=entry.get("severity") or None,
+                link=str(entry.get("link", "")),
             )
+            for entry in entries or []
+        )
     return tuple(advisories)
 
 

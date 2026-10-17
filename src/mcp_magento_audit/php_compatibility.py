@@ -110,14 +110,14 @@ def _parse_report(stdout: str) -> tuple[tuple[str, ...], tuple[PhpCompatibilityC
     changes: list[PhpCompatibilityChange] = []
     for file_diff in report.get("file_diffs") or []:
         file_path = str(file_diff.get("file", ""))
-        for change in file_diff.get("changes") or []:
-            changes.append(
-                PhpCompatibilityChange(
-                    file=file_path,
-                    line=int(change.get("line") or 0),
-                    rector_rule=str(change.get("rector", "")),
-                )
+        changes.extend(
+            PhpCompatibilityChange(
+                file=file_path,
+                line=int(change.get("line") or 0),
+                rector_rule=str(change.get("rector", "")),
             )
+            for change in file_diff.get("changes") or []
+        )
     return changed_files, tuple(changes)
 
 

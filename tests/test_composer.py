@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -57,13 +58,13 @@ def test_missing_directory_raises_error():
 
 
 def test_missing_composer_json_raises_error(tmp_path):
-    with pytest.raises(ProjectError, match="missing file composer.json"):
+    with pytest.raises(ProjectError, match=re.escape("missing file composer.json")):
         load_project(tmp_path)
 
 
 def test_missing_composer_lock_raises_error(tmp_path):
     (tmp_path / "composer.json").write_text("{}")
-    with pytest.raises(ProjectError, match="missing file composer.lock"):
+    with pytest.raises(ProjectError, match=re.escape("missing file composer.lock")):
         load_project(tmp_path)
 
 

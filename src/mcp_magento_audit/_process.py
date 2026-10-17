@@ -10,7 +10,7 @@ from typing import Any
 
 
 def run(args: list[str], cwd: Path, timeout: int) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 # nosec B603 - fixed argv, no shell
+    return subprocess.run(  # nosec B603 - fixed argv, no shell
         args, cwd=cwd, capture_output=True, text=True, timeout=timeout
     )
 

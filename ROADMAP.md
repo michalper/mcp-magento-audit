@@ -127,4 +127,7 @@ All eight planned tools (`project_status`, `check_updates`, `module_risk`,
       deliberately not in pre-commit).
 - [x] `pre-commit` config — local hooks for ruff/mypy/bandit/pytest, installed via
       `pre-commit install`.
-- [ ] Consider widening the ruff ruleset (`RUF`, `PERF`) once the codebase is bigger.
+- [x] Widened the ruff ruleset with `RUF` and `PERF` — fixed the 10 findings
+      this surfaced (5 `PERF401` manual-loop-to-comprehension, 3 stale
+      `noqa` directives for rules no longer selected, 2 `RUF043` ambiguous
+      `pytest.raises(match=...)` patterns needing `re.escape`).
