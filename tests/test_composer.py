@@ -2,36 +2,36 @@ from pathlib import Path
 
 import pytest
 
-from mcp_magento_audit.composer import BladProjektu, wczytaj_projekt
+from mcp_magento_audit.composer import ProjectError, load_project
 
-SKLEP = Path(__file__).parent / "fixtures" / "sklep"
-
-
-def test_czyta_wersje_magento_i_wymog_php():
-    projekt = wczytaj_projekt(SKLEP)
-    assert projekt.wersja_magento == "2.4.7"
-    assert projekt.wymog_php_projektu == "~8.2.0||~8.3.0"
+STORE = Path(__file__).parent / "fixtures" / "sklep"
 
 
-def test_liczy_pakiety_z_obu_grup():
-    assert len(wczytaj_projekt(SKLEP).pakiety) == 3
+def test_reads_magento_version_and_php_requirement():
+    project = load_project(STORE)
+    assert project.magento_version == "2.4.7"
+    assert project.project_php_requirement == "~8.2.0||~8.3.0"
 
 
-def test_rozpoznaje_pakiet_porzucony():
-    porzucone = [p.nazwa for p in wczytaj_projekt(SKLEP).porzucone]
-    assert porzucone == ["stary/modul"]
+def test_counts_packages_from_both_groups():
+    assert len(load_project(STORE).packages) == 3
 
 
-def test_wymog_php_pakietu():
-    pakiet = next(p for p in wczytaj_projekt(SKLEP).pakiety if p.nazwa == "stary/modul")
-    assert pakiet.wymog_php == "^7.4"
+def test_detects_abandoned_package():
+    abandoned = [p.name for p in load_project(STORE).abandoned_packages]
+    assert abandoned == ["stary/modul"]
 
 
-def test_brak_katalogu_daje_czytelny_blad():
-    with pytest.raises(BladProjektu, match="nie jest katalogiem"):
-        wczytaj_projekt("/nie/ma/takiego/katalogu")
+def test_php_requirement_of_specific_package():
+    package = next(p for p in load_project(STORE).packages if p.name == "stary/modul")
+    assert package.php_requirement == "^7.4"
 
 
-def test_katalog_bez_composera_daje_czytelny_blad(tmp_path):
-    with pytest.raises(BladProjektu, match="brak pliku composer.json"):
-        wczytaj_projekt(tmp_path)
+def test_missing_directory_raises_error():
+    with pytest.raises(ProjectError, match="is not a directory"):
+        load_project("/no/such/directory")
+
+
+def test_missing_composer_json_raises_error(tmp_path):
+    with pytest.raises(ProjectError, match="missing file composer.json"):
+        load_project(tmp_path)

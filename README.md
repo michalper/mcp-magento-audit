@@ -7,8 +7,8 @@ PHP i Magento**, **jakość modułów autorskich** i **bezpieczeństwo zależno�
 Odpowiada na pytanie, które w agencjach Magento wraca bez końca:
 *„czy możemy podbić tego klienta na nowszą wersję, co to blokuje i od czego zacząć?"*
 
-> **Status: wczesny etap.** Projekt rozwijany po godzinach. Działa narzędzie
-> `stan_projektu`; reszta narzędzi jest w planie i jeszcze nie istnieje.
+> **Status: wczesny etap.** Projekt rozwijany po godzinach. Działają narzędzia
+> `project_status` i `check_updates`; reszta narzędzi jest w planie i jeszcze nie istnieje.
 
 ## Czym to się różni od `composer audit`
 
@@ -53,11 +53,11 @@ python3.12 -m venv .venv
 
 | Narzędzie | Stan | Opis |
 |---|---|---|
-| `stan_projektu` | **działa** | wersja Magento, wymaganie PHP, liczba pakietów, pakiety porzucone |
-| `sprawdz_aktualizacje` | planowane | werdykt per moduł wobec docelowej wersji PHP i Magento |
-| `ryzyko_modulow_autorskich` | planowane | skan `app/code` pod kątem wycofanych API |
-| `pobierz_noty_wydawnicze` | planowane | noty ze źródła producenta, **bez odpowiadania z pamięci modelu** |
-| `plan_aktualizacji` | planowane | uporządkowany plan z kolejnością i blokerami |
+| `project_status` | **działa** | wersja Magento, wymaganie PHP, liczba pakietów, pakiety porzucone |
+| `check_updates` | **działa** | werdykt per pakiet wobec docelowej wersji PHP i Magento |
+| `module_risk` | planowane | skan `app/code` pod kątem wycofanych API |
+| `fetch_release_notes` | planowane | noty ze źródła producenta, **bez odpowiadania z pamięci modelu** |
+| `upgrade_plan` | planowane | uporządkowany plan z kolejnością i blokerami |
 
 ## Rozwój
 

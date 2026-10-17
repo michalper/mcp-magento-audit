@@ -1,8 +1,7 @@
-"""Odczyt stanu projektu Magento z plików Composera.
+"""Read Magento project state from Composer files.
 
-Czysta warstwa Composerowa — celowo bez niczego specyficznego dla Magento,
-żeby dało się ją później wydzielić do narzędzia dla dowolnego projektu PHP
-(patrz plan: warstwa Composerowa jako osobny moduł).
+Pure Composer layer — deliberately free of anything Magento-specific, so it
+could later be split out into a tool for any PHP project.
 """
 
 from __future__ import annotations
@@ -13,80 +12,81 @@ from pathlib import Path
 from typing import Any
 
 
-class BladProjektu(Exception):
-    """Projekt nie istnieje albo nie wygląda na projekt Composerowy."""
+class ProjectError(Exception):
+    """The project does not exist or does not look like a Composer project."""
 
 
 @dataclass(frozen=True)
-class Pakiet:
-    nazwa: str
-    wersja: str
-    wymaga: dict[str, str] = field(default_factory=dict)
-    porzucony: bool = False
+class Package:
+    name: str
+    version: str
+    requires: dict[str, str] = field(default_factory=dict)
+    abandoned: bool = False
 
     @property
-    def wymog_php(self) -> str | None:
-        return self.wymaga.get("php")
+    def php_requirement(self) -> str | None:
+        return self.requires.get("php")
 
 
 @dataclass(frozen=True)
-class Projekt:
-    sciezka: Path
-    pakiety: tuple[Pakiet, ...]
-    wymog_php_projektu: str | None
+class Project:
+    path: Path
+    packages: tuple[Package, ...]
+    project_php_requirement: str | None
 
     @property
-    def wersja_magento(self) -> str | None:
-        """Wersja wzięta z produktu Magento, jeśli projekt go w ogóle ma."""
-        for kandydat in ("magento/product-community-edition", "magento/product-enterprise-edition"):
-            for p in self.pakiety:
-                if p.nazwa == kandydat:
-                    return p.wersja
+    def magento_version(self) -> str | None:
+        """Version taken from the Magento product package, if the project has one."""
+        candidates = ("magento/product-community-edition", "magento/product-enterprise-edition")
+        for candidate in candidates:
+            for p in self.packages:
+                if p.name == candidate:
+                    return p.version
         return None
 
     @property
-    def porzucone(self) -> tuple[Pakiet, ...]:
-        return tuple(p for p in self.pakiety if p.porzucony)
+    def abandoned_packages(self) -> tuple[Package, ...]:
+        return tuple(p for p in self.packages if p.abandoned)
 
 
-def _wczytaj_json(sciezka: Path) -> dict[str, Any]:
+def _load_json(path: Path) -> dict[str, Any]:
     try:
-        dane: Any = json.loads(sciezka.read_text(encoding="utf-8"))
-        if not isinstance(dane, dict):
-            raise BladProjektu(f"{sciezka.name} nie zawiera obiektu JSON")
-        return dane
+        data: Any = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ProjectError(f"{path.name} does not contain a JSON object")
+        return data
     except FileNotFoundError as e:
-        raise BladProjektu(f"brak pliku {sciezka.name} w {sciezka.parent}") from e
+        raise ProjectError(f"missing file {path.name} in {path.parent}") from e
     except json.JSONDecodeError as e:
-        raise BladProjektu(f"{sciezka.name} nie jest poprawnym JSON-em: {e}") from e
+        raise ProjectError(f"{path.name} is not valid JSON: {e}") from e
 
 
-def wczytaj_projekt(katalog: str | Path) -> Projekt:
-    """Wczytuje composer.json i composer.lock z katalogu projektu."""
-    kat = Path(katalog).expanduser().resolve()
-    if not kat.is_dir():
-        raise BladProjektu(f"{kat} nie jest katalogiem")
+def load_project(directory: str | Path) -> Project:
+    """Loads composer.json and composer.lock from a project directory."""
+    dir_path = Path(directory).expanduser().resolve()
+    if not dir_path.is_dir():
+        raise ProjectError(f"{dir_path} is not a directory")
 
-    composer = _wczytaj_json(kat / "composer.json")
-    lock = _wczytaj_json(kat / "composer.lock")
+    composer = _load_json(dir_path / "composer.json")
+    lock = _load_json(dir_path / "composer.lock")
 
-    porzucone = set(lock.get("abandoned") or {})
+    abandoned = set(lock.get("abandoned") or {})
 
-    pakiety: list[Pakiet] = []
-    for grupa in ("packages", "packages-dev"):
-        for wpis in lock.get(grupa) or []:
-            nazwa = wpis.get("name", "")
-            pakiety.append(
-                Pakiet(
-                    nazwa=nazwa,
-                    wersja=wpis.get("version", "?"),
-                    wymaga={k: str(v) for k, v in (wpis.get("require") or {}).items()},
-                    porzucony=nazwa in porzucone or bool(wpis.get("abandoned")),
+    packages: list[Package] = []
+    for group in ("packages", "packages-dev"):
+        for entry in lock.get(group) or []:
+            name = entry.get("name", "")
+            packages.append(
+                Package(
+                    name=name,
+                    version=entry.get("version", "?"),
+                    requires={k: str(v) for k, v in (entry.get("require") or {}).items()},
+                    abandoned=name in abandoned or bool(entry.get("abandoned")),
                 )
             )
 
-    return Projekt(
-        sciezka=kat,
-        pakiety=tuple(pakiety),
-        wymog_php_projektu=(composer.get("require") or {}).get("php"),
+    return Project(
+        path=dir_path,
+        packages=tuple(packages),
+        project_php_requirement=(composer.get("require") or {}).get("php"),
     )

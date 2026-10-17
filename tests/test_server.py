@@ -1,16 +1,35 @@
 from pathlib import Path
 
-from mcp_magento_audit.server import stan_projektu
+from mcp_magento_audit.magento_versions import PhpRequirement
+from mcp_magento_audit.server import check_updates, project_status
 
-SKLEP = str(Path(__file__).parent / "fixtures" / "sklep")
-
-
-def test_zwraca_stan_projektu():
-    wynik = stan_projektu(SKLEP)
-    assert wynik["wersja_magento"] == "2.4.7"
-    assert wynik["liczba_pakietow"] == 3
-    assert wynik["porzucone"] == ["stary/modul"]
+STORE = str(Path(__file__).parent / "fixtures" / "sklep")
 
 
-def test_bledna_sciezka_zwraca_blad_a_nie_wyjatek():
-    assert "blad" in stan_projektu("/nie/ma/takiego/katalogu")
+def test_project_status_full_result():
+    result = project_status(STORE)
+    assert result["magento_version"] == "2.4.7"
+    assert result["package_count"] == 3
+    assert result["abandoned"] == ["stary/modul"]
+
+
+def test_invalid_path_returns_error_not_exception():
+    assert "error" in project_status("/no/such/directory")
+
+
+def test_check_updates_full_result(monkeypatch):
+    requirement = PhpRequirement(php_requirement="~8.1.0||~8.2.0||~8.3.0", source="hardcoded")
+    monkeypatch.setattr(
+        "mcp_magento_audit.updates.php_requirement_for_magento", lambda version: requirement
+    )
+
+    result = check_updates(STORE, target_php="8.3", target_magento="2.4.7")
+
+    assert result["php_data_source"] == "hardcoded"
+    verdicts = {p["package"]: p["verdict"] for p in result["packages"]}
+    assert verdicts["magento/product-community-edition"] == "ok"
+    assert verdicts["stary/modul"] == "blocks"
+
+
+def test_check_updates_invalid_path_returns_error_not_exception():
+    assert "error" in check_updates("/no/such/directory", target_php="8.3", target_magento="2.4.7")
