@@ -2,6 +2,8 @@
 
 <!-- mcp-name: io.github.michalper/mcp-magento-audit -->
 
+![mcp-magento-audit — an MCP server that audits Magento 2 / Adobe Commerce projects for AI coding agents](docs/assets/social-preview.png)
+
 [![CI](https://github.com/michalper/mcp-magento-audit/actions/workflows/ci.yml/badge.svg)](https://github.com/michalper/mcp-magento-audit/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/mcp-magento-audit.svg)](https://pypi.org/project/mcp-magento-audit/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -99,6 +101,8 @@ environment to raise that to 5000/hour; a read-only, no-scope token is enough, s
 only ever reads public release data.
 
 ## Example
+
+![Claude Code calling upgrade_plan against a store that has one abandoned, PHP-7-only package — ready: false, with the real blocker and a note that phpstan never ran](docs/assets/demo.gif)
 
 An agent calling `upgrade_plan` against a store that has one abandoned, PHP-7-only
 package and no `phpstan.neon` of its own (trimmed — the real result also includes
