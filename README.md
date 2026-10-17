@@ -65,10 +65,15 @@ python3.12 -m venv .venv
 ## Development
 
 ```bash
-.venv/bin/python -m pytest        # tests
-.venv/bin/ruff check .            # lint
-.venv/bin/mypy src                # types
+.venv/bin/python -m pytest --cov        # tests + coverage
+.venv/bin/ruff check .                  # lint
+.venv/bin/mypy src                      # types
+.venv/bin/bandit -c pyproject.toml -r src   # security
+.venv/bin/pip-audit                     # dependency vulnerabilities
 ```
+
+Run `.venv/bin/pre-commit install` once to run all of the above (except
+`pip-audit`, which needs network access and stays CI-only) on every commit.
 
 Architectural decisions are recorded in `docs/adr/`.
 

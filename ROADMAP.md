@@ -17,6 +17,8 @@ All five planned tools (`project_status`, `check_updates`, `module_risk`,
 - [x] Test coverage measurement (`pytest-cov`) — wired into `pyproject.toml` and CI.
 - [x] Security linter (`bandit`) — wired into `pyproject.toml` and CI, reviewed findings
       annotated with `# nosec`.
-- [ ] No dependency vulnerability scan (`pip-audit` or similar) in CI.
-- [ ] No `pre-commit` config (ruff/mypy/pytest/bandit only run in CI today, not on commit).
+- [x] Dependency vulnerability scan (`pip-audit`) — wired into CI (network-dependent,
+      deliberately not in pre-commit).
+- [x] `pre-commit` config — local hooks for ruff/mypy/bandit/pytest, installed via
+      `pre-commit install`.
 - [ ] Consider widening the ruff ruleset (`RUF`, `PERF`) once the codebase is bigger.

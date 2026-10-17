@@ -22,3 +22,5 @@ jobs:
         run: mypy src
       - name: Security
         run: bandit -c pyproject.toml -r src
+      - name: Dependency audit
+        run: pip-audit
