@@ -48,13 +48,16 @@ function that only maps `ProjectError` → `{"error": ...}`). Keep domain logic 
 
 ## Releasing a new version
 
+Add a `## [X.Y.Z] - YYYY-MM-DD` entry to `CHANGELOG.md` summarizing what changed since
+the last release (Keep a Changelog style: Added/Fixed/Changed/Declined).
+
 `scripts/bump_version.py` updates the version in `pyproject.toml` and `server.json` (three
 fields across two files, previously kept in sync by hand) — it only edits files, it doesn't
 tag, push, or publish:
 
 ```bash
 .venv/bin/python scripts/bump_version.py patch   # or minor / major / an explicit X.Y.Z
-git add pyproject.toml server.json
+git add pyproject.toml server.json CHANGELOG.md
 git commit -m "Bump to <version>"
 git tag v<version> && git push origin master v<version>
 gh release create v<version> --generate-notes    # triggers PyPI publish via CI (Trusted Publishing)

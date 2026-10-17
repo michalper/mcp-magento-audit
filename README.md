@@ -3,6 +3,7 @@
 <!-- mcp-name: io.github.michalper/mcp-magento-audit -->
 
 [![CI](https://github.com/michalper/mcp-magento-audit/actions/workflows/ci.yml/badge.svg)](https://github.com/michalper/mcp-magento-audit/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/mcp-magento-audit.svg)](https://pypi.org/project/mcp-magento-audit/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](pyproject.toml)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
@@ -117,7 +118,8 @@ ran at all, so a clean result elsewhere isn't mistaken for "everything was check
 Run `.venv/bin/pre-commit install` once to run all of the above (except
 `pip-audit`, which needs network access and stays CI-only) on every commit.
 
-Architectural decisions are recorded in `docs/adr/`.
+Architectural decisions are recorded in `docs/adr/`. See `CHANGELOG.md` for what
+changed in each release.
 
 ## License
 
