@@ -115,6 +115,8 @@ def _unverified_signals(
         unverified.append(f"rector: {risk.rector.reason}")
     if not risk.vendor_phpcs.scanned:
         unverified.append(f"vendor_phpcs: {risk.vendor_phpcs.reason}")
+    if not risk.object_manager_misuse.scanned:
+        unverified.append(f"object_manager_misuse: {risk.object_manager_misuse.reason}")
     if not security.scanned:
         unverified.append(f"security_audit: {security.reason}")
     if not outdated.scanned:

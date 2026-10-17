@@ -529,3 +529,80 @@ def test_app_code_issues_default_to_app_code_scope(tmp_path, monkeypatch):
 
     phpcs_issues = [i for i in result.issues if i.tool == "phpcs" and i.scope == "app_code"]
     assert len(phpcs_issues) == 1
+
+
+def test_object_manager_misuse_not_scanned_without_app_code(tmp_path):
+    result = mr.scan(tmp_path)
+
+    assert result.object_manager_misuse.scanned is True
+    assert result.object_manager_misuse.target == "app/code"
+    om_issues = [i for i in result.issues if i.tool == "object_manager"]
+    assert om_issues == []
+
+
+def test_object_manager_misuse_detected_in_app_code_php_file(tmp_path):
+    module_dir = tmp_path / "app" / "code" / "Acme" / "Module" / "Model"
+    module_dir.mkdir(parents=True)
+    (module_dir / "Thing.php").write_text(
+        "<?php\n"
+        "class Thing {\n"
+        "    public function foo() {\n"
+        "        $om = \\Magento\\Framework\\App\\ObjectManager::getInstance();\n"
+        "        return $om;\n"
+        "    }\n"
+        "}\n"
+    )
+
+    result = mr.scan(tmp_path)
+
+    assert result.object_manager_misuse.scanned is True
+    om_issues = [i for i in result.issues if i.tool == "object_manager"]
+    assert len(om_issues) == 1
+    assert om_issues[0].file == "app/code/Acme/Module/Model/Thing.php"
+    assert om_issues[0].line == 4
+    assert om_issues[0].severity == "warning"
+    assert om_issues[0].scope == "app_code"
+
+
+def test_object_manager_misuse_detected_in_phtml_template(tmp_path):
+    module_dir = tmp_path / "app" / "code" / "Acme" / "Module" / "view" / "frontend" / "templates"
+    module_dir.mkdir(parents=True)
+    (module_dir / "widget.phtml").write_text(
+        "<?php $om = ObjectManager::getInstance(); ?>\n<div>hi</div>\n"
+    )
+
+    result = mr.scan(tmp_path)
+
+    om_issues = [i for i in result.issues if i.tool == "object_manager"]
+    assert len(om_issues) == 1
+    assert om_issues[0].file.endswith("widget.phtml")
+    assert om_issues[0].line == 1
+
+
+def test_object_manager_misuse_ignores_unrelated_double_colon_usage(tmp_path):
+    module_dir = tmp_path / "app" / "code" / "Acme" / "Module" / "Model"
+    module_dir.mkdir(parents=True)
+    (module_dir / "Thing.php").write_text(
+        "<?php\n"
+        "class Thing {\n"
+        "    public function foo() {\n"
+        "        return SomeOtherClass::getInstance();\n"
+        "    }\n"
+        "}\n"
+    )
+
+    result = mr.scan(tmp_path)
+
+    om_issues = [i for i in result.issues if i.tool == "object_manager"]
+    assert om_issues == []
+
+
+def test_object_manager_misuse_issue_count_is_included_in_total(tmp_path):
+    module_dir = tmp_path / "app" / "code" / "Acme" / "Module"
+    module_dir.mkdir(parents=True)
+    (module_dir / "A.php").write_text("<?php ObjectManager::getInstance();\n")
+    (module_dir / "B.php").write_text("<?php ObjectManager::getInstance();\n")
+
+    result = mr.scan(tmp_path)
+
+    assert result.issue_count == 2

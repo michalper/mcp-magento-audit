@@ -97,7 +97,7 @@ ran at all, so a clean result elsewhere isn't mistaken for "everything was check
 |---|---|---|
 | `project_status` | **working** | Magento version, PHP requirement, package count, abandoned packages |
 | `check_updates` | **working** | per-package verdict against a target PHP/Magento version, plus a Rector-based check of whether the code itself would need changes |
-| `module_risk` | **working** | scans code via `phpcs` (Magento2 coding standard), the project's own `phpstan`, and the project's own `rector.php` (dead code/quality) — plus a separate `phpcs` pass over third-party `vendor/` Magento modules (informational, not an upgrade blocker) |
+| `module_risk` | **working** | scans code via `phpcs` (Magento2 coding standard), the project's own `phpstan`, and the project's own `rector.php` (dead code/quality) — plus a separate `phpcs` pass over third-party `vendor/` Magento modules (informational, not an upgrade blocker), and a plain regex scan for `ObjectManager::getInstance()` misuse in `app/code` (not limited to `.phtml`, unlike the standard's own sniff) |
 | `security_audit` | **working** | every installed package in `composer.lock` — core Magento, third-party `vendor/` extensions, dev dependencies — checked for known advisories via `composer audit` |
 | `outdated_packages` | **working** | every installed package checked against `composer outdated` for a newer available version — independent of known CVEs or target-version compatibility |
 | `fetch_release_notes` | **working** | release notes from `magento/magento2` GitHub Releases, **without answering from the model's memory** |

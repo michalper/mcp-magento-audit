@@ -38,6 +38,17 @@ target packages are discovered from `composer.lock`: every package of type
 already covered by `security_audit`'s CVE check for known vulnerabilities
 rather than coding-standard violations).
 
+A fifth check (`object_manager_misuse`) is a plain-Python regex scan over
+`app/code`'s own `.php`/`.phtml` files for `ObjectManager::getInstance()` —
+not a phpcs sniff. Confirmed directly against `magento/magento-coding-standard`'s
+own source (`Magento2/Sniffs/Templates/ObjectManagerSniff.php`): the standard's
+*only* built-in check for this is `Magento2.Templates.ObjectManagerUsageFound`,
+and it only fires inside `.phtml` templates — direct ObjectManager usage in a
+Model/Block/Helper class (arguably the more harmful case, since it bypasses
+constructor DI in business logic, not just a template) isn't covered by phpcs
+at all. No subprocess involved, so there's no "tool not found" failure mode —
+`scanned=false` only if `app/code` itself couldn't be read.
+
 `issue_count` on the result is always the true total found by each tool;
 the `issues` list itself is capped per tool (`MAX_STORED_ISSUES_PER_TOOL`) so
 one badly-neglected module can't blow up the result size while still
@@ -48,6 +59,7 @@ from __future__ import annotations
 
 import functools
 import json
+import re
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -71,11 +83,13 @@ PHPSTAN_MEMORY_LIMIT = "2G"
 PHPCS_CONFIG_FILE_NAMES = ("phpcs.xml", "phpcs.xml.dist")
 PHPSTAN_CONFIG_FILE_NAMES = ("phpstan.neon", "phpstan.neon.dist", "phpstan.dist.neon")
 RECTOR_CONFIG_FILE_NAMES = ("rector.php",)
+OBJECT_MANAGER_PATTERN = re.compile(r"\bObjectManager\s*::\s*getInstance\s*\(")
+OBJECT_MANAGER_FILE_EXTENSIONS = (".php", ".phtml")
 
 
 @dataclass(frozen=True)
 class Issue:
-    tool: str  # "phpcs" | "phpstan" | "rector"
+    tool: str  # "phpcs" | "phpstan" | "rector" | "object_manager"
     file: str
     line: int
     severity: str  # "error" | "warning"
@@ -98,6 +112,7 @@ class ModuleRiskResult:
     rector: ToolRun
     vendor_phpcs: ToolRun
     vendor_packages: tuple[str, ...]
+    object_manager_misuse: ToolRun
     issue_count: int
     issues: tuple[Issue, ...]
 
@@ -358,6 +373,44 @@ def _run_vendor_phpcs(project_path: Path) -> tuple[ToolRun, tuple[Path, ...], tu
     return run, tuple(targets), issues
 
 
+def _scan_object_manager_misuse(project_path: Path) -> tuple[ToolRun, tuple[Issue, ...]]:
+    target_dir = project_path / "app" / "code"
+    if not target_dir.is_dir():
+        return ToolRun(scanned=True, reason=None, target=FALLBACK_TARGET), ()
+
+    issues: list[Issue] = []
+    try:
+        files = [
+            f
+            for ext in OBJECT_MANAGER_FILE_EXTENSIONS
+            for f in target_dir.rglob(f"*{ext}")
+            if f.is_file()
+        ]
+        for file_path in files:
+            text = file_path.read_text(encoding="utf-8", errors="replace")
+            for match in OBJECT_MANAGER_PATTERN.finditer(text):
+                line = text.count("\n", 0, match.start()) + 1
+                issues.append(
+                    Issue(
+                        tool="object_manager",
+                        file=_relative(str(file_path), project_path),
+                        line=line,
+                        severity="warning",
+                        source="ObjectManagerUsageFound",
+                        message=(
+                            "Direct ObjectManager::getInstance() call bypasses dependency "
+                            "injection — inject the needed class via the constructor instead."
+                        ),
+                        scope="app_code",
+                    )
+                )
+    except OSError as e:
+        reason = f"could not scan {FALLBACK_TARGET}: {e}"
+        return ToolRun(scanned=False, reason=reason, target=""), ()
+
+    return ToolRun(scanned=True, reason=None, target=FALLBACK_TARGET), tuple(issues)
+
+
 def _cap(issues: tuple[Issue, ...]) -> tuple[Issue, ...]:
     """Caps the stored issues, keeping errors over warnings when truncating
     (insertion order alone could bury a real error behind earlier warnings)."""
@@ -370,12 +423,21 @@ def scan(project_path: Path) -> ModuleRiskResult:
     phpstan_run, phpstan_issues = _run_phpstan(project_path)
     rector_run, rector_issues = _run_rector(project_path)
     vendor_phpcs_run, vendor_packages, vendor_phpcs_issues = _run_vendor_phpcs(project_path)
+    object_manager_run, object_manager_issues = _scan_object_manager_misuse(project_path)
 
     issue_count = (
-        len(phpcs_issues) + len(phpstan_issues) + len(rector_issues) + len(vendor_phpcs_issues)
+        len(phpcs_issues)
+        + len(phpstan_issues)
+        + len(rector_issues)
+        + len(vendor_phpcs_issues)
+        + len(object_manager_issues)
     )
     issues = (
-        _cap(phpcs_issues) + _cap(phpstan_issues) + _cap(rector_issues) + _cap(vendor_phpcs_issues)
+        _cap(phpcs_issues)
+        + _cap(phpstan_issues)
+        + _cap(rector_issues)
+        + _cap(vendor_phpcs_issues)
+        + _cap(object_manager_issues)
     )
 
     return ModuleRiskResult(
@@ -384,6 +446,7 @@ def scan(project_path: Path) -> ModuleRiskResult:
         rector=rector_run,
         vendor_phpcs=vendor_phpcs_run,
         vendor_packages=tuple(str(p.relative_to(project_path)) for p in vendor_packages),
+        object_manager_misuse=object_manager_run,
         issue_count=issue_count,
         issues=issues,
     )

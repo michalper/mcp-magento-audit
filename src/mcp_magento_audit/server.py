@@ -93,8 +93,12 @@ def check_updates(path: str, target_php: str, target_magento: str) -> dict[str, 
         "composer.lock, excluding magento/* core) with the bare Magento2 standard — the "
         "scanned package list is in vendor_packages, and those issues carry scope='vendor' "
         "(vs 'app_code' for the rest) so callers can tell code they can fix from code they "
-        "can't. Each tool reports scanned=false with a reason when it can't run, instead of "
-        "staying silent."
+        "can't. A fifth check (object_manager_misuse) is a plain regex scan over app/code's "
+        "own .php/.phtml files for ObjectManager::getInstance() — not a phpcs sniff: "
+        "magento-coding-standard's only built-in check for this fires solely inside .phtml "
+        "templates, not in Model/Block/Helper classes where bypassing constructor DI is "
+        "arguably more harmful. Each tool reports scanned=false with a reason when it can't "
+        "run, instead of staying silent."
     )
 )
 def module_risk(path: str) -> dict[str, Any]:

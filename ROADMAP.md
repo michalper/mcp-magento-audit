@@ -33,11 +33,16 @@ All eight planned tools (`project_status`, `check_updates`, `module_risk`,
       outdated_packages' composer calls are each seconds-to-minutes and
       don't scale across a fleet in one call. A project that fails to load
       is reported with its own error rather than failing the whole batch.
-- [ ] `module_risk`: surface Object Manager misuse explicitly — the Magento2
-      phpcs standard already flags direct `ObjectManager::getInstance()` calls
-      (sniff `Magento2.Classes.ObjectManager`) as part of the existing scan,
-      but it's buried among generic phpcs issues; worth calling out as its
-      own category in the result instead of leaving the caller to notice it.
+- [x] `module_risk`: `object_manager_misuse` — a plain regex scan over
+      `app/code`'s `.php`/`.phtml` files for `ObjectManager::getInstance()`.
+      Correction after checking `magento/magento-coding-standard`'s own
+      source: there is no `Magento2.Classes.ObjectManager` sniff (an
+      assumption from an earlier roadmap entry, not verified at the time).
+      The standard's only built-in check for this,
+      `Magento2.Templates.ObjectManagerUsageFound`, fires solely inside
+      `.phtml` templates — not in Model/Block/Helper classes, arguably the
+      more harmful case since it bypasses constructor DI in business logic.
+      No subprocess, so no "tool not found" failure mode.
 - [ ] `module_risk`: detect core overrides — `app/code` classes that
       redeclare a class that already exists in `vendor/magento/*` (copy-paste
       of a core file under the same namespace/class name), which silently
