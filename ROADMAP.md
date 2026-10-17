@@ -73,15 +73,23 @@ All eight planned tools (`project_status`, `check_updates`, `module_risk`,
       Section,Ajax}` directly, no `_isAllowed()`/ACL equivalent exists for
       the customer/frontend area at all, so the original item's mention of
       "customer-area action classes" was itself a wrong assumption.)
-- [ ] `module_risk`: flag empty `catch (...) {}` blocks and discouraged debug
-      calls (`var_dump`/`print_r`/`echo`/`die` left in production code) —
-      cheap, low-noise AST checks. Deliberately not pursuing N+1-query
-      detection or "service contracts vs. direct collection access" —
-      those need real dataflow analysis, not AST/pattern matching, and would
-      be too false-positive-prone at the level this project operates.
-- [ ] `module_risk`: flag empty `catch (...) {}` blocks and discouraged debug
-      calls (`var_dump`/`print_r`/`echo`/`die` left in production code) —
-      cheap, low-noise AST checks.
+- [x] ~~`module_risk`: flag empty `catch (...) {}` blocks and discouraged
+      debug calls (`var_dump`/`print_r`/`echo`/`die`)~~ — checked against
+      `magento/magento-coding-standard`'s own source before writing any code:
+      2 of 3 sub-items are **already fully covered** by the `phpcs` scan
+      `module_risk` already runs, so building them again would be pure
+      duplication: empty catch blocks → `Magento2.CodeAnalysis.EmptyBlock`
+      (core itself suppresses it with `phpcs:ignore` in 23 places — proof the
+      sniff fires), `var_dump`/`print_r` → `Magento2.Functions.
+      DiscouragedFunction`. The one gap phpcs structurally doesn't cover —
+      bare `die`/`exit`/`echo` as language constructs, not function calls —
+      turned out too low-value to justify a new custom check on its own:
+      7 and 1 occurrence respectively in the *entire* core codebase. Declined
+      rather than building a checker for a signal that rare. Deliberately not
+      pursuing N+1-query detection or "service contracts vs. direct
+      collection access" either — those need real dataflow analysis, not
+      AST/pattern matching, and would be too false-positive-prone at the
+      level this project operates.
 - [ ] `module_risk`: flag `module.xml` `<sequence>` entries missing for
       modules a module's own code actually depends on (DI-injected classes,
       referenced layout handles/blocks) — the classic Magento
