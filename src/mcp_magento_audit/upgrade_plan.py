@@ -119,6 +119,8 @@ def _unverified_signals(
         unverified.append(f"object_manager_misuse: {risk.object_manager_misuse.reason}")
     if not risk.core_overrides.scanned:
         unverified.append(f"core_overrides: {risk.core_overrides.reason}")
+    if not risk.dangling_references.scanned:
+        unverified.append(f"dangling_references: {risk.dangling_references.reason}")
     if not security.scanned:
         unverified.append(f"security_audit: {security.reason}")
     if not outdated.scanned:

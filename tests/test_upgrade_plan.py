@@ -200,6 +200,7 @@ def test_vendor_scope_issues_do_not_produce_blockers(tmp_path, monkeypatch):
         vendor_packages=("vendor/acme/module-foo",),
         object_manager_misuse=ToolRun(True, None, "app/code"),
         core_overrides=ToolRun(True, None, "app/code vs vendor/magento"),
+        dangling_references=ToolRun(True, None, "app/code"),
         issue_count=1,
         issues=(vendor_issue,),
     )

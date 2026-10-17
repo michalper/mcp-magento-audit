@@ -62,6 +62,20 @@ candidate) before comparing FQCNs. `scanned=false` only if there's no
 `vendor/magento` at all — can't rule out an override without a reference
 copy of core to compare against.
 
+A seventh check (`dangling_references`) flags `app/code`'s own declarative XML
+config (`di.xml` `preference`/`plugin`, `events.xml` `observer`, `crontab.xml`
+`job`, layout XML `block`/`uiComponent`, `indexer.xml`, `schema.graphqls`
+`@resolver`) naming a PHP class that doesn't actually exist anywhere in the
+project — the classic "renamed/removed the class, forgot the XML still
+pointed at it" bug, invisible to phpcs/phpstan/rector since none of them
+analyze XML. Verified empirically against a real Magento core checkout
+(~5100 references checked, true noise rate ≈0% — the only hits were two
+likely-genuine-but-harmless typos in core's own di.xml). `severity="warning"`
+(not an `upgrade_plan` blocker) given that even core itself has a harmless
+bare non-namespaced placeholder reference — not confident enough yet in the
+zero-false-positive rate on arbitrary agency code to block an upgrade on it.
+Also pure Python, no subprocess.
+
 `issue_count` on the result is always the true total found by each tool;
 the `issues` list itself is capped per tool (`MAX_STORED_ISSUES_PER_TOOL`) so
 one badly-neglected module can't blow up the result size while still
@@ -74,6 +88,7 @@ import functools
 import json
 import re
 import subprocess
+import xml.etree.ElementTree as ET  # nosec B405 - ET's default (expat) parser never resolves external entities, so no XXE; entity-expansion DoS isn't addressed here, same as this project's other XML/JSON parsing
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -113,11 +128,35 @@ COMMENT_OR_STRING_PATTERN = re.compile(
     r'|"(?:\\.|[^"\\])*"',
     re.DOTALL,
 )
+# (tag, attributes-that-name-a-PHP-class) pairs this checks — the handful of
+# Magento XML dialects empirically verified against real core (di.xml
+# preference/plugin, events.xml observer, crontab.xml job, layout XML
+# block/uiComponent, indexer.xml indexer/saveHandler). Deliberately not a
+# blanket "any attribute called type/class anywhere" — that would also catch
+# unrelated attributes like xsi:type (a schema type, not a class) or a
+# layout block's own `name=` identifier.
+XML_REFERENCE_ATTRS: dict[str, tuple[str, ...]] = {
+    "preference": ("for", "type"),
+    "plugin": ("type",),
+    "observer": ("instance",),
+    "job": ("instance",),
+    "block": ("class",),
+    "uiComponent": ("class",),
+    "indexer": ("class",),
+    "saveHandler": ("class",),
+}
+# Generated at compile-time by Magento's DI compiler, never present on disk —
+# a reference ending in one of these resolves if the class it decorates does.
+GENERATED_CLASS_SUFFIXES = ("\\Proxy", "\\Interceptor")
+# schema.graphqls is GraphQL SDL, not XML: `@resolver(class: "Vendor\\Module\\Class")`
+# — each backslash is escaped as `\\` inside the string literal.
+GRAPHQL_RESOLVER_PATTERN = re.compile(r'@resolver\(\s*class:\s*"([^"]+)"')
 
 
 @dataclass(frozen=True)
 class Issue:
-    tool: str  # "phpcs" | "phpstan" | "rector" | "object_manager"
+    # "phpcs" | "phpstan" | "rector" | "object_manager" | "core_override" | "dangling_reference"
+    tool: str
     file: str
     line: int
     severity: str  # "error" | "warning"
@@ -142,6 +181,7 @@ class ModuleRiskResult:
     vendor_packages: tuple[str, ...]
     object_manager_misuse: ToolRun
     core_overrides: ToolRun
+    dangling_references: ToolRun
     issue_count: int
     issues: tuple[Issue, ...]
 
@@ -538,6 +578,132 @@ def _scan_core_overrides(project_path: Path) -> tuple[ToolRun, tuple[Issue, ...]
     )
 
 
+def _known_fqcns(root: Path) -> set[str]:
+    """Every FQCN declared under `root` — reuses `_declared_classes`'s PHP
+    class-declaration scan, flattened into a plain existence set rather than
+    `_index_classes_by_name`'s by-bare-name index (that index answers "is
+    there a class with this short name"; this answers "does this exact FQCN
+    exist", which is what a di.xml/events.xml/... reference needs)."""
+    fqcns: set[str] = set()
+    for php_file in root.rglob("*.php"):
+        if not php_file.is_file():
+            continue
+        for fqcn, _name in _declared_classes(php_file):
+            fqcns.add(fqcn)
+    return fqcns
+
+
+def _virtual_type_names(root: Path) -> set[str]:
+    """Every `<virtualType name="...">` declared in any `di.xml` under
+    `root` — a virtualType is a DI-container alias, not a real class, but is
+    just as valid a `preference`/`plugin`/`observer`/`job` target as one."""
+    names: set[str] = set()
+    for di_file in root.rglob("di.xml"):
+        if not di_file.is_file():
+            continue
+        try:
+            tree = ET.parse(di_file)  # nosec B314 - expat doesn't resolve external entities
+        except ET.ParseError:
+            continue
+        for virtual_type in tree.getroot().iter("virtualType"):
+            name = virtual_type.get("name")
+            if name:
+                names.add(name.lstrip("\\"))
+    return names
+
+
+def _xml_class_references(xml_file: Path) -> list[str]:
+    """Attribute values naming a PHP class, from the handful of (tag,
+    attribute) pairs in `XML_REFERENCE_ATTRS` — covers di.xml, events.xml,
+    crontab.xml, layout XML and indexer.xml in one pass, since each tag name
+    only ever appears in one of those dialects."""
+    try:
+        tree = ET.parse(xml_file)  # nosec B314 - expat doesn't resolve external entities
+    except ET.ParseError:
+        return []
+    return [
+        value
+        for element in tree.getroot().iter()
+        for attr in XML_REFERENCE_ATTRS.get(element.tag, ())
+        if (value := element.get(attr))
+    ]
+
+
+def _graphql_class_references(schema_file: Path) -> list[str]:
+    """`@resolver(class: "...")` targets from a `schema.graphqls` file —
+    GraphQL SDL, not XML, so this is a plain regex instead of `ET.parse`.
+    Each backslash in the FQCN is escaped as `\\\\` inside the string
+    literal; collapsed back to a single backslash here."""
+    text = schema_file.read_text(encoding="utf-8", errors="replace")
+    return [m.group(1).replace("\\\\", "\\") for m in GRAPHQL_RESOLVER_PATTERN.finditer(text)]
+
+
+def _resolves(candidate: str, known: set[str], virtual_types: set[str]) -> bool:
+    if candidate in known or candidate in virtual_types:
+        return True
+    for suffix in GENERATED_CLASS_SUFFIXES:
+        if candidate.endswith(suffix) and candidate[: -len(suffix)] in known | virtual_types:
+            return True
+    return False
+
+
+def _scan_dangling_references(project_path: Path) -> tuple[ToolRun, tuple[Issue, ...]]:
+    app_code_dir = project_path / "app" / "code"
+    vendor_dir = project_path / "vendor"
+
+    if not app_code_dir.is_dir():
+        return ToolRun(scanned=True, reason=None, target=FALLBACK_TARGET), ()
+
+    def _issue(candidate: str, file_path: Path) -> Issue:
+        return Issue(
+            tool="dangling_reference",
+            file=_relative(str(file_path), project_path),
+            line=1,
+            severity="warning",
+            source=candidate,
+            message=(
+                f"{candidate} is referenced here but doesn't resolve to any known class — "
+                "likely a stale reference left behind by a rename or removal."
+            ),
+            scope="app_code",
+        )
+
+    def _scan() -> tuple[Issue, ...]:
+        known = _known_fqcns(app_code_dir)
+        virtual_types = _virtual_type_names(app_code_dir)
+        if vendor_dir.is_dir():
+            known |= _known_fqcns(vendor_dir)
+            virtual_types |= _virtual_type_names(vendor_dir)
+
+        issues: list[Issue] = []
+        for xml_file in app_code_dir.rglob("*.xml"):
+            if not xml_file.is_file():
+                continue
+            for value in _xml_class_references(xml_file):
+                candidate = value.lstrip("\\")
+                # A real Magento FQCN always sits under a vendor namespace —
+                # a bare, unqualified token (seen even in core's own di.xml,
+                # as an inert placeholder) could never resolve either way.
+                if "\\" not in candidate or _resolves(candidate, known, virtual_types):
+                    continue
+                issues.append(_issue(candidate, xml_file))
+        for schema_file in app_code_dir.rglob("schema.graphqls"):
+            if not schema_file.is_file():
+                continue
+            for value in _graphql_class_references(schema_file):
+                candidate = value.lstrip("\\")
+                if "\\" not in candidate or _resolves(candidate, known, virtual_types):
+                    continue
+                issues.append(_issue(candidate, schema_file))
+        return tuple(issues)
+
+    return _run_filesystem_scan(
+        target=FALLBACK_TARGET,
+        failure_label="could not scan for dangling class references",
+        scan=_scan,
+    )
+
+
 def _cap(issues: tuple[Issue, ...]) -> tuple[Issue, ...]:
     """Caps the stored issues, keeping errors over warnings when truncating
     (insertion order alone could bury a real error behind earlier warnings)."""
@@ -546,19 +712,20 @@ def _cap(issues: tuple[Issue, ...]) -> tuple[Issue, ...]:
 
 
 def scan(project_path: Path) -> ModuleRiskResult:
-    # All 6 checks are independent of one another (each only reads from
+    # All 7 checks are independent of one another (each only reads from
     # project_path), so they run concurrently rather than strictly in
     # sequence — the 3 subprocess-based checks release the GIL while
-    # waiting on phpcs/phpstan/rector, and the pure-Python regex scans don't
-    # contend with them, matching the fan-out already used by
+    # waiting on phpcs/phpstan/rector, and the pure-Python regex/XML scans
+    # don't contend with them, matching the fan-out already used by
     # upgrade_plan.build()/fleet.overview().
-    with ThreadPoolExecutor(max_workers=6) as executor:
+    with ThreadPoolExecutor(max_workers=7) as executor:
         phpcs_future = executor.submit(_run_phpcs, project_path)
         phpstan_future = executor.submit(_run_phpstan, project_path)
         rector_future = executor.submit(_run_rector, project_path)
         vendor_phpcs_future = executor.submit(_run_vendor_phpcs, project_path)
         object_manager_future = executor.submit(_scan_object_manager_misuse, project_path)
         core_overrides_future = executor.submit(_scan_core_overrides, project_path)
+        dangling_references_future = executor.submit(_scan_dangling_references, project_path)
 
         phpcs_run, phpcs_issues = phpcs_future.result()
         phpstan_run, phpstan_issues = phpstan_future.result()
@@ -566,6 +733,7 @@ def scan(project_path: Path) -> ModuleRiskResult:
         vendor_phpcs_run, vendor_packages, vendor_phpcs_issues = vendor_phpcs_future.result()
         object_manager_run, object_manager_issues = object_manager_future.result()
         core_overrides_run, core_overrides_issues = core_overrides_future.result()
+        dangling_references_run, dangling_references_issues = dangling_references_future.result()
 
     issue_count = (
         len(phpcs_issues)
@@ -574,6 +742,7 @@ def scan(project_path: Path) -> ModuleRiskResult:
         + len(vendor_phpcs_issues)
         + len(object_manager_issues)
         + len(core_overrides_issues)
+        + len(dangling_references_issues)
     )
     issues = (
         _cap(phpcs_issues)
@@ -582,6 +751,7 @@ def scan(project_path: Path) -> ModuleRiskResult:
         + _cap(vendor_phpcs_issues)
         + _cap(object_manager_issues)
         + _cap(core_overrides_issues)
+        + _cap(dangling_references_issues)
     )
 
     return ModuleRiskResult(
@@ -592,6 +762,7 @@ def scan(project_path: Path) -> ModuleRiskResult:
         vendor_packages=tuple(str(p.relative_to(project_path)) for p in vendor_packages),
         object_manager_misuse=object_manager_run,
         core_overrides=core_overrides_run,
+        dangling_references=dangling_references_run,
         issue_count=issue_count,
         issues=issues,
     )

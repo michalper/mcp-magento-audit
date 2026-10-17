@@ -101,8 +101,14 @@ def check_updates(path: str, target_php: str, target_magento: str) -> dict[str, 
         "redeclare a class already present in vendor/magento/* under the exact same fully "
         "qualified name (a copy-pasted core file, not a legitimate di.xml preference/plugin) "
         "— severity=error, so unlike the previous two it does become an upgrade_plan blocker, "
-        "since that silently blocks safely updating the vendor copy it shadows. Each tool "
-        "reports scanned=false with a reason when it can't run, instead of staying silent."
+        "since that silently blocks safely updating the vendor copy it shadows. A seventh "
+        "check (dangling_references) flags app/code's own di.xml (preference/plugin), "
+        "events.xml (observer), crontab.xml (job), layout XML (block/uiComponent), "
+        "indexer.xml and schema.graphqls (@resolver) naming a PHP class that doesn't "
+        "resolve to any known class or virtualType — a stale reference left behind by a "
+        "rename or removal, invisible to phpcs/phpstan/rector since none of them analyze "
+        "XML. severity=warning, not an upgrade_plan blocker. Each tool reports scanned=false "
+        "with a reason when it can't run, instead of staying silent."
     )
 )
 def module_risk(path: str) -> dict[str, Any]:

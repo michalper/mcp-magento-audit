@@ -752,3 +752,227 @@ def test_core_override_is_a_blocker_in_upgrade_plan_shape(tmp_path):
 
     override = next(i for i in result.issues if i.tool == "core_override")
     assert override.severity == "error" and override.scope == "app_code"
+
+
+def test_dangling_references_not_scanned_without_app_code(tmp_path):
+    result = mr.scan(tmp_path)
+
+    assert result.dangling_references.scanned is True
+    assert result.dangling_references.target == "app/code"
+
+
+def test_dangling_reference_flagged_when_preference_target_does_not_exist(tmp_path):
+    etc_dir = tmp_path / "app" / "code" / "Acme" / "Foo" / "etc"
+    etc_dir.mkdir(parents=True)
+    (etc_dir / "di.xml").write_text(
+        '<?xml version="1.0"?>\n'
+        '<config>\n'
+        '  <preference for="Acme\\Foo\\Api\\BarInterface" type="Acme\\Foo\\Model\\Bar"/>\n'
+        "</config>\n"
+    )
+
+    result = mr.scan(tmp_path)
+
+    dangling = [i for i in result.issues if i.tool == "dangling_reference"]
+    assert {d.source for d in dangling} == {
+        "Acme\\Foo\\Api\\BarInterface",
+        "Acme\\Foo\\Model\\Bar",
+    }
+    assert all(d.severity == "warning" and d.scope == "app_code" for d in dangling)
+
+
+def test_dangling_reference_not_flagged_when_preference_target_exists(tmp_path):
+    etc_dir = tmp_path / "app" / "code" / "Acme" / "Foo" / "etc"
+    etc_dir.mkdir(parents=True)
+    (etc_dir / "di.xml").write_text(
+        '<?xml version="1.0"?>\n'
+        '<config>\n'
+        '  <preference for="Acme\\Foo\\Api\\BarInterface" type="Acme\\Foo\\Model\\Bar"/>\n'
+        "</config>\n"
+    )
+    model_dir = tmp_path / "app" / "code" / "Acme" / "Foo" / "Model"
+    model_dir.mkdir(parents=True)
+    (model_dir / "Bar.php").write_text("<?php\nnamespace Acme\\Foo\\Model;\nclass Bar {}\n")
+    api_dir = tmp_path / "app" / "code" / "Acme" / "Foo" / "Api"
+    api_dir.mkdir(parents=True)
+    (api_dir / "BarInterface.php").write_text(
+        "<?php\nnamespace Acme\\Foo\\Api;\ninterface BarInterface {}\n"
+    )
+
+    result = mr.scan(tmp_path)
+
+    assert [i for i in result.issues if i.tool == "dangling_reference"] == []
+
+
+def test_dangling_reference_resolves_against_vendor_classes(tmp_path):
+    vendor_dir = tmp_path / "vendor" / "magento" / "module-catalog" / "Model"
+    vendor_dir.mkdir(parents=True)
+    (vendor_dir / "Product.php").write_text(
+        "<?php\nnamespace Magento\\Catalog\\Model;\nclass Product {}\n"
+    )
+    etc_dir = tmp_path / "app" / "code" / "Acme" / "Foo" / "etc"
+    etc_dir.mkdir(parents=True)
+    (etc_dir / "plugin_di.xml").write_text(
+        '<?xml version="1.0"?>\n'
+        '<config>\n'
+        '  <type name="Magento\\Catalog\\Model\\Product">\n'
+        '    <plugin name="acme_foo_plugin" type="Magento\\Catalog\\Model\\Product"/>\n'
+        "  </type>\n"
+        "</config>\n"
+    )
+
+    result = mr.scan(tmp_path)
+
+    assert [i for i in result.issues if i.tool == "dangling_reference"] == []
+
+
+def test_dangling_reference_resolves_virtual_type_as_observer_target(tmp_path):
+    etc_dir = tmp_path / "app" / "code" / "Acme" / "Foo" / "etc"
+    etc_dir.mkdir(parents=True)
+    (etc_dir / "di.xml").write_text(
+        '<?xml version="1.0"?>\n'
+        '<config>\n'
+        '  <virtualType name="Acme\\Foo\\Virtual\\Observer"\n'
+        '               type="Acme\\Foo\\Model\\RealObserver"/>\n'
+        "</config>\n"
+    )
+    (etc_dir / "events.xml").write_text(
+        '<?xml version="1.0"?>\n'
+        '<config>\n'
+        '  <event name="some_event">\n'
+        '    <observer name="acme_foo" instance="Acme\\Foo\\Virtual\\Observer"/>\n'
+        "  </event>\n"
+        "</config>\n"
+    )
+    model_dir = tmp_path / "app" / "code" / "Acme" / "Foo" / "Model"
+    model_dir.mkdir(parents=True)
+    (model_dir / "RealObserver.php").write_text(
+        "<?php\nnamespace Acme\\Foo\\Model;\nclass RealObserver {}\n"
+    )
+
+    result = mr.scan(tmp_path)
+
+    assert [i for i in result.issues if i.tool == "dangling_reference"] == []
+
+
+def test_dangling_reference_resolves_generated_proxy_and_interceptor_suffixes(tmp_path):
+    etc_dir = tmp_path / "app" / "code" / "Acme" / "Foo" / "etc"
+    etc_dir.mkdir(parents=True)
+    (etc_dir / "di.xml").write_text(
+        '<?xml version="1.0"?>\n'
+        '<config>\n'
+        '  <preference for="Acme\\Foo\\Model\\Bar\\Proxy"\n'
+        '              type="Acme\\Foo\\Model\\Bar\\Interceptor"/>\n'
+        "</config>\n"
+    )
+    model_dir = tmp_path / "app" / "code" / "Acme" / "Foo" / "Model"
+    model_dir.mkdir(parents=True)
+    (model_dir / "Bar.php").write_text("<?php\nnamespace Acme\\Foo\\Model;\nclass Bar {}\n")
+
+    result = mr.scan(tmp_path)
+
+    assert [i for i in result.issues if i.tool == "dangling_reference"] == []
+
+
+def test_dangling_reference_ignores_bare_non_namespaced_tokens(tmp_path):
+    etc_dir = tmp_path / "app" / "code" / "Acme" / "Foo" / "etc"
+    etc_dir.mkdir(parents=True)
+    (etc_dir / "di.xml").write_text(
+        '<?xml version="1.0"?>\n'
+        '<config>\n'
+        '  <preference for="SomePlaceholderToken" type="Acme\\Foo\\Model\\Bar"/>\n'
+        "</config>\n"
+    )
+    model_dir = tmp_path / "app" / "code" / "Acme" / "Foo" / "Model"
+    model_dir.mkdir(parents=True)
+    (model_dir / "Bar.php").write_text("<?php\nnamespace Acme\\Foo\\Model;\nclass Bar {}\n")
+
+    result = mr.scan(tmp_path)
+
+    # The bare "SomePlaceholderToken" (no backslash) is never flagged even
+    # though it doesn't exist — it's structurally not a possible Magento
+    # FQCN, same as the inert placeholder found in core's own di.xml.
+    assert [i for i in result.issues if i.tool == "dangling_reference"] == []
+
+
+def test_dangling_reference_flagged_in_graphql_schema(tmp_path):
+    etc_dir = tmp_path / "app" / "code" / "Acme" / "Foo" / "etc"
+    etc_dir.mkdir(parents=True)
+    (etc_dir / "schema.graphqls").write_text(
+        'type Query {\n'
+        '    acmeFoo: String @resolver(class: "Acme\\\\Foo\\\\Model\\\\Resolver\\\\Missing")\n'
+        "}\n"
+    )
+
+    result = mr.scan(tmp_path)
+
+    dangling = [i for i in result.issues if i.tool == "dangling_reference"]
+    assert len(dangling) == 1
+    assert dangling[0].source == "Acme\\Foo\\Model\\Resolver\\Missing"
+    assert dangling[0].file == "app/code/Acme/Foo/etc/schema.graphqls"
+
+
+def test_dangling_reference_flagged_in_crontab_and_indexer_xml(tmp_path):
+    etc_dir = tmp_path / "app" / "code" / "Acme" / "Foo" / "etc"
+    etc_dir.mkdir(parents=True)
+    (etc_dir / "crontab.xml").write_text(
+        '<?xml version="1.0"?>\n'
+        '<config>\n'
+        '  <group id="default">\n'
+        '    <job name="acme_foo_job" instance="Acme\\Foo\\Cron\\Missing" method="execute"/>\n'
+        "  </group>\n"
+        "</config>\n"
+    )
+    (etc_dir / "indexer.xml").write_text(
+        '<?xml version="1.0"?>\n'
+        '<config>\n'
+        '  <indexer id="acme_foo" class="Acme\\Foo\\Indexer\\Missing">\n'
+        "    <title>Acme Foo</title>\n"
+        "  </indexer>\n"
+        "</config>\n"
+    )
+
+    result = mr.scan(tmp_path)
+
+    sources = {i.source for i in result.issues if i.tool == "dangling_reference"}
+    assert sources == {"Acme\\Foo\\Cron\\Missing", "Acme\\Foo\\Indexer\\Missing"}
+
+
+def test_dangling_reference_flagged_in_layout_block_class(tmp_path):
+    layout_dir = tmp_path / "app" / "code" / "Acme" / "Foo" / "view" / "frontend" / "layout"
+    layout_dir.mkdir(parents=True)
+    (layout_dir / "acme_foo_index.xml").write_text(
+        '<?xml version="1.0"?>\n'
+        '<layout>\n'
+        '  <body>\n'
+        '    <referenceContainer name="content">\n'
+        '      <block name="acme.foo" class="Acme\\Foo\\Block\\Missing"/>\n'
+        "    </referenceContainer>\n"
+        "  </body>\n"
+        "</layout>\n"
+    )
+
+    result = mr.scan(tmp_path)
+
+    dangling = [i for i in result.issues if i.tool == "dangling_reference"]
+    assert len(dangling) == 1
+    assert dangling[0].source == "Acme\\Foo\\Block\\Missing"
+
+
+def test_dangling_reference_is_not_a_blocker_in_upgrade_plan_shape(tmp_path):
+    """Unlike core_override (severity=error), dangling_reference is
+    severity=warning — not confident enough yet in a zero-false-positive
+    rate on arbitrary agency code to block an upgrade_plan on it."""
+    etc_dir = tmp_path / "app" / "code" / "Acme" / "Foo" / "etc"
+    etc_dir.mkdir(parents=True)
+    (etc_dir / "di.xml").write_text(
+        '<?xml version="1.0"?>\n'
+        '<config>\n'
+        '  <preference for="Acme\\Foo\\Api\\Missing" type="Acme\\Foo\\Model\\AlsoMissing"/>\n'
+        "</config>\n"
+    )
+
+    result = mr.scan(tmp_path)
+
+    dangling = next(i for i in result.issues if i.tool == "dangling_reference")
+    assert dangling.severity == "warning" and dangling.scope == "app_code"

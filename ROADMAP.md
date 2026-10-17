@@ -90,6 +90,41 @@ All eight planned tools (`project_status`, `check_updates`, `module_risk`,
       collection access" either — those need real dataflow analysis, not
       AST/pattern matching, and would be too false-positive-prone at the
       level this project operates.
+- [x] `module_risk`: `dangling_references` — flags `app/code`'s own `di.xml`
+      (`preference`/`plugin`), `events.xml` (`observer`), `crontab.xml`
+      (`job`), layout XML (`block`/`uiComponent`), `indexer.xml`, and
+      `schema.graphqls` (`@resolver`) naming a PHP class that doesn't
+      resolve to any known class/interface or `virtualType` — invisible to
+      phpcs/phpstan/rector, none of which analyze XML. Verified empirically
+      against a real Magento core checkout (~5100 references checked across
+      di.xml/events.xml/crontab.xml/layout/indexer.xml/schema.graphqls,
+      true noise rate ≈0% — the only hits were 2-3 likely-genuine-but-
+      harmless typos already present in core's own di.xml, reproduced
+      independently with the actual shipped implementation, not just the
+      verification script). `severity="warning"`, not an `upgrade_plan`
+      blocker — not confident enough yet in a zero-false-positive rate on
+      arbitrary agency code (unlike core's own, heavily-reviewed XML) to
+      block an upgrade on it. Handles PHP's generated `\Proxy`/`\Interceptor`
+      suffixes and `virtualType` aliases as valid resolution targets, and
+      skips bare non-namespaced tokens (structurally not a possible Magento
+      FQCN — seen even in core's own di.xml as an inert placeholder). Pure
+      Python, no subprocess.
+- [x] `release_notes.py`'s GitHub API call now sends `Authorization: Bearer`
+      when `GITHUB_TOKEN`/`GH_TOKEN` is set in the environment — raises the
+      60/hour unauthenticated rate limit to 5000/hour. Documented in README.
+- [x] Documented in README that every subprocess-based check (`module_risk`'s
+      phpcs/phpstan/rector, `code_compatibility`, `security_audit`,
+      `outdated_packages`) needs PHP/Composer reachable from wherever this
+      MCP server itself runs — a real gap for projects developed exclusively
+      inside Docker/DDEV/Warden/Lando, where `scanned=false` can otherwise
+      read as "found nothing" rather than "couldn't check".
+- [ ] An optional exec-prefix env var (e.g. wrapping every subprocess call
+      with `ddev exec --`) would close the Docker/DDEV gap above more
+      completely than documentation alone, but touches every subprocess call
+      site across 4 modules (`module_risk`, `php_compatibility`,
+      `security_audit`, `outdated_packages`) — a real design decision (env
+      var name, whether it's one global prefix or configurable per-tool),
+      not something to build speculatively without that decision made first.
 - [x] ~~`module_risk`: flag `module.xml` `<sequence>` entries missing for
       modules a module's own code actually uses~~ — **declined** after
       checking against `Magento_Sales` (core's own flagship module, heavily

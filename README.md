@@ -66,6 +66,25 @@ python3.12 -m venv .venv
 }
 ```
 
+### Projects that develop inside Docker/DDEV/Warden/Lando
+
+`module_risk` (phpcs/phpstan/rector), `check_updates`'s `code_compatibility` signal, and
+`security_audit`/`outdated_packages` all shell out to the project's own `vendor/bin/*`
+and `composer`. If that project only has PHP/Composer available *inside* a dev container
+— common for Magento — and this MCP server runs on the host, every one of those checks
+will correctly report `scanned=false` with a reason rather than silently being wrong, but
+that's easy to misread as "found nothing" instead of "couldn't check". Either run this
+server from inside the project's own dev container, or point it at a host where the
+project's PHP/Composer are actually installed.
+
+### Rate limits on GitHub API calls
+
+`fetch_release_notes` calls the GitHub REST API, capped at 60 requests/hour per IP when
+unauthenticated — easily hit from a shared office/CI IP running `fleet_overview` or
+`upgrade_plan` across many projects. Set `GITHUB_TOKEN` (or `GH_TOKEN`) in the
+environment to raise that to 5000/hour; a read-only, no-scope token is enough, since this
+only ever reads public release data.
+
 ## Example
 
 An agent calling `upgrade_plan` against a store that has one abandoned, PHP-7-only
@@ -98,7 +117,7 @@ ran at all, so a clean result elsewhere isn't mistaken for "everything was check
 |---|---|---|
 | `project_status` | **working** | Magento version, PHP requirement, package count, abandoned packages |
 | `check_updates` | **working** | per-package verdict against a target PHP/Magento version, plus a Rector-based check of whether the code itself would need changes |
-| `module_risk` | **working** | scans code via `phpcs` (Magento2 coding standard), the project's own `phpstan`, and the project's own `rector.php` (dead code/quality) — plus a separate `phpcs` pass over third-party `vendor/` Magento modules (informational, not an upgrade blocker), a plain regex scan for `ObjectManager::getInstance()` misuse in `app/code` (not limited to `.phtml`, unlike the standard's own sniff), and a core-override check (`app/code` classes that redeclare a `vendor/magento/*` class under the same FQCN — an upgrade blocker) |
+| `module_risk` | **working** | scans code via `phpcs` (Magento2 coding standard), the project's own `phpstan`, and the project's own `rector.php` (dead code/quality) — plus a separate `phpcs` pass over third-party `vendor/` Magento modules (informational, not an upgrade blocker), a plain regex scan for `ObjectManager::getInstance()` misuse in `app/code` (not limited to `.phtml`, unlike the standard's own sniff), a core-override check (`app/code` classes that redeclare a `vendor/magento/*` class under the same FQCN — an upgrade blocker), and a dangling-reference check (`di.xml`/`events.xml`/`crontab.xml`/layout XML/`indexer.xml`/`schema.graphqls` naming a PHP class that no longer exists — informational) |
 | `security_audit` | **working** | every installed package in `composer.lock` — core Magento, third-party `vendor/` extensions, dev dependencies — checked for known advisories via `composer audit` |
 | `outdated_packages` | **working** | every installed package checked against `composer outdated` for a newer available version — independent of known CVEs or target-version compatibility |
 | `fetch_release_notes` | **working** | release notes from `magento/magento2` GitHub Releases, **without answering from the model's memory** |
