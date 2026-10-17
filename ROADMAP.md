@@ -43,13 +43,16 @@ All eight planned tools (`project_status`, `check_updates`, `module_risk`,
       `.phtml` templates — not in Model/Block/Helper classes, arguably the
       more harmful case since it bypasses constructor DI in business logic.
       No subprocess, so no "tool not found" failure mode.
-- [ ] `module_risk`: detect core overrides — `app/code` classes that
-      redeclare a class that already exists in `vendor/magento/*` (copy-paste
-      of a core file under the same namespace/class name), which silently
-      blocks safe upgrades. Unlike Object Manager misuse this isn't a phpcs
-      sniff — needs its own check cross-referencing class names declared in
-      `app/code` against `vendor/magento/*`, as opposed to legitimate `di.xml`
-      preferences/plugins, which don't duplicate the class itself.
+- [x] `module_risk`: `core_overrides` — flags `app/code` classes that
+      redeclare a class already present in `vendor/magento/*` under the
+      exact same fully qualified name (a copy-pasted core file, not a
+      legitimate `di.xml` preference/plugin, which reference the original
+      class rather than duplicate it). `severity="error"`, so — unlike
+      `object_manager_misuse` — it *does* become an `upgrade_plan` blocker.
+      Indexes every class in `vendor/magento/*` once by bare class name (an
+      O(1) dict lookup per `app/code` candidate, not a filesystem walk per
+      candidate — confirmed fast against a real ~8500-class core tree,
+      ~1.3s). `scanned=false` only if there's no `vendor/magento` at all.
 - [ ] `module_risk`: flag admin/customer controller actions missing
       `_isAllowed()` (or an always-`true` stub) — not a phpcs sniff, needs
       its own AST-ish check over `app/code`'s `Controller/Adminhtml` and

@@ -49,6 +49,19 @@ constructor DI in business logic, not just a template) isn't covered by phpcs
 at all. No subprocess involved, so there's no "tool not found" failure mode —
 `scanned=false` only if `app/code` itself couldn't be read.
 
+A sixth check (`core_overrides`) flags `app/code` classes that redeclare a
+class already present in `vendor/magento/*` under the exact same fully
+qualified name — a copy-pasted core file, not a legitimate `di.xml`
+`preference`/plugin (those reference the original class, they don't
+duplicate it). It's `severity="error"`, so — unlike the two checks above,
+both `warning` — it *does* become an `upgrade_plan` blocker: a literal
+core-class duplicate silently blocks safely updating the vendor copy it
+shadows. Indexes every class in `vendor/magento/*` once by bare class name
+(an O(1) dict lookup per app/code candidate, not a filesystem walk per
+candidate) before comparing FQCNs. `scanned=false` only if there's no
+`vendor/magento` at all — can't rule out an override without a reference
+copy of core to compare against.
+
 `issue_count` on the result is always the true total found by each tool;
 the `issues` list itself is capped per tool (`MAX_STORED_ISSUES_PER_TOOL`) so
 one badly-neglected module can't blow up the result size while still
@@ -85,6 +98,8 @@ PHPSTAN_CONFIG_FILE_NAMES = ("phpstan.neon", "phpstan.neon.dist", "phpstan.dist.
 RECTOR_CONFIG_FILE_NAMES = ("rector.php",)
 OBJECT_MANAGER_PATTERN = re.compile(r"\bObjectManager\s*::\s*getInstance\s*\(")
 OBJECT_MANAGER_FILE_EXTENSIONS = (".php", ".phtml")
+CLASS_DECLARATION_PATTERN = re.compile(r"\b(?:class|interface|trait)\s+(\w+)")
+NAMESPACE_DECLARATION_PATTERN = re.compile(r"^\s*namespace\s+([\w\\]+)\s*;", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -113,6 +128,7 @@ class ModuleRiskResult:
     vendor_phpcs: ToolRun
     vendor_packages: tuple[str, ...]
     object_manager_misuse: ToolRun
+    core_overrides: ToolRun
     issue_count: int
     issues: tuple[Issue, ...]
 
@@ -411,6 +427,77 @@ def _scan_object_manager_misuse(project_path: Path) -> tuple[ToolRun, tuple[Issu
     return ToolRun(scanned=True, reason=None, target=FALLBACK_TARGET), tuple(issues)
 
 
+def _declared_classes(file_path: Path) -> list[tuple[str, str]]:
+    """Returns (fqcn, class_name) pairs declared in a PHP file — one
+    namespace per file is assumed (Magento's own PSR-4 convention), applied
+    to every class/interface/trait keyword found in it."""
+    text = file_path.read_text(encoding="utf-8", errors="replace")
+    namespace_match = NAMESPACE_DECLARATION_PATTERN.search(text)
+    namespace = namespace_match.group(1) if namespace_match else ""
+    declared = []
+    for match in CLASS_DECLARATION_PATTERN.finditer(text):
+        name = match.group(1)
+        fqcn = f"{namespace}\\{name}" if namespace else name
+        declared.append((fqcn, name))
+    return declared
+
+
+def _index_classes_by_name(root: Path) -> dict[str, list[tuple[str, Path]]]:
+    """One pass over every `.php` file under `root`, indexed by bare class
+    name — so looking up whether a given app/code class exists in core is an
+    O(1) dict lookup instead of a filesystem walk per candidate."""
+    index: dict[str, list[tuple[str, Path]]] = {}
+    for php_file in root.rglob("*.php"):
+        if not php_file.is_file():
+            continue
+        for fqcn, name in _declared_classes(php_file):
+            index.setdefault(name, []).append((fqcn, php_file))
+    return index
+
+
+def _scan_core_overrides(project_path: Path) -> tuple[ToolRun, tuple[Issue, ...]]:
+    app_code_dir = project_path / "app" / "code"
+    vendor_magento_dir = project_path / "vendor" / "magento"
+
+    if not app_code_dir.is_dir():
+        return ToolRun(scanned=True, reason=None, target=FALLBACK_TARGET), ()
+    if not vendor_magento_dir.is_dir():
+        reason = "no vendor/magento — can't tell whether app/code redeclares a core class"
+        return ToolRun(scanned=False, reason=reason, target=""), ()
+
+    issues: list[Issue] = []
+    try:
+        vendor_index = _index_classes_by_name(vendor_magento_dir)
+        for app_file in app_code_dir.rglob("*.php"):
+            if not app_file.is_file():
+                continue
+            for fqcn, name in _declared_classes(app_file):
+                for vendor_fqcn, vendor_file in vendor_index.get(name, ()):
+                    if vendor_fqcn != fqcn:
+                        continue
+                    issues.append(
+                        Issue(
+                            tool="core_override",
+                            file=_relative(str(app_file), project_path),
+                            line=1,
+                            severity="error",
+                            source=fqcn,
+                            message=(
+                                f"{fqcn} redeclares a class that already exists in "
+                                f"{_relative(str(vendor_file), project_path)} — silently "
+                                "blocks safe updates to that core file; use a plugin or "
+                                "di.xml preference instead of copy-pasting it."
+                            ),
+                            scope="app_code",
+                        )
+                    )
+    except OSError as e:
+        reason = f"could not scan for core overrides: {e}"
+        return ToolRun(scanned=False, reason=reason, target=""), ()
+
+    return ToolRun(scanned=True, reason=None, target="app/code vs vendor/magento"), tuple(issues)
+
+
 def _cap(issues: tuple[Issue, ...]) -> tuple[Issue, ...]:
     """Caps the stored issues, keeping errors over warnings when truncating
     (insertion order alone could bury a real error behind earlier warnings)."""
@@ -424,6 +511,7 @@ def scan(project_path: Path) -> ModuleRiskResult:
     rector_run, rector_issues = _run_rector(project_path)
     vendor_phpcs_run, vendor_packages, vendor_phpcs_issues = _run_vendor_phpcs(project_path)
     object_manager_run, object_manager_issues = _scan_object_manager_misuse(project_path)
+    core_overrides_run, core_overrides_issues = _scan_core_overrides(project_path)
 
     issue_count = (
         len(phpcs_issues)
@@ -431,6 +519,7 @@ def scan(project_path: Path) -> ModuleRiskResult:
         + len(rector_issues)
         + len(vendor_phpcs_issues)
         + len(object_manager_issues)
+        + len(core_overrides_issues)
     )
     issues = (
         _cap(phpcs_issues)
@@ -438,6 +527,7 @@ def scan(project_path: Path) -> ModuleRiskResult:
         + _cap(rector_issues)
         + _cap(vendor_phpcs_issues)
         + _cap(object_manager_issues)
+        + _cap(core_overrides_issues)
     )
 
     return ModuleRiskResult(
@@ -447,6 +537,7 @@ def scan(project_path: Path) -> ModuleRiskResult:
         vendor_phpcs=vendor_phpcs_run,
         vendor_packages=tuple(str(p.relative_to(project_path)) for p in vendor_packages),
         object_manager_misuse=object_manager_run,
+        core_overrides=core_overrides_run,
         issue_count=issue_count,
         issues=issues,
     )

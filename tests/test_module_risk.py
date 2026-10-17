@@ -606,3 +606,87 @@ def test_object_manager_misuse_issue_count_is_included_in_total(tmp_path):
     result = mr.scan(tmp_path)
 
     assert result.issue_count == 2
+
+
+def test_core_overrides_not_scanned_without_vendor_magento(tmp_path):
+    app_dir = tmp_path / "app" / "code" / "Acme" / "Module" / "Model"
+    app_dir.mkdir(parents=True)
+    (app_dir / "Thing.php").write_text("<?php\nnamespace Acme\\Module\\Model;\nclass Thing {}\n")
+
+    result = mr.scan(tmp_path)
+
+    assert result.core_overrides.scanned is False
+    assert "vendor/magento" in result.core_overrides.reason
+
+
+def test_core_overrides_not_scanned_without_app_code(tmp_path):
+    (tmp_path / "vendor" / "magento" / "module-catalog").mkdir(parents=True)
+
+    result = mr.scan(tmp_path)
+
+    assert result.core_overrides.scanned is True
+    assert result.core_overrides.target == "app/code"
+
+
+def test_core_override_detected_for_exact_fqcn_match(tmp_path):
+    vendor_dir = tmp_path / "vendor" / "magento" / "module-catalog" / "Model"
+    vendor_dir.mkdir(parents=True)
+    (vendor_dir / "Product.php").write_text(
+        "<?php\nnamespace Magento\\Catalog\\Model;\nclass Product {}\n"
+    )
+
+    app_dir = tmp_path / "app" / "code" / "Magento" / "Catalog" / "Model"
+    app_dir.mkdir(parents=True)
+    (app_dir / "Product.php").write_text(
+        "<?php\nnamespace Magento\\Catalog\\Model;\nclass Product {}\n"
+    )
+
+    result = mr.scan(tmp_path)
+
+    assert result.core_overrides.scanned is True
+    overrides = [i for i in result.issues if i.tool == "core_override"]
+    assert len(overrides) == 1
+    assert overrides[0].severity == "error"
+    assert overrides[0].scope == "app_code"
+    assert overrides[0].source == "Magento\\Catalog\\Model\\Product"
+    assert "module-catalog" in overrides[0].message
+
+
+def test_core_overrides_ignores_same_class_name_in_different_namespace(tmp_path):
+    vendor_dir = tmp_path / "vendor" / "magento" / "module-catalog" / "Model"
+    vendor_dir.mkdir(parents=True)
+    (vendor_dir / "Product.php").write_text(
+        "<?php\nnamespace Magento\\Catalog\\Model;\nclass Product {}\n"
+    )
+
+    app_dir = tmp_path / "app" / "code" / "Acme" / "Module" / "Model"
+    app_dir.mkdir(parents=True)
+    (app_dir / "Product.php").write_text(
+        "<?php\nnamespace Acme\\Module\\Model;\nclass Product {}\n"
+    )
+
+    result = mr.scan(tmp_path)
+
+    overrides = [i for i in result.issues if i.tool == "core_override"]
+    assert overrides == []
+
+
+def test_core_override_is_a_blocker_in_upgrade_plan_shape(tmp_path):
+    """core_override issues are severity=error + scope=app_code — the same
+    shape upgrade_plan._quality_blockers already treats as a blocker, unlike
+    the warning-severity object_manager_misuse/rector issues."""
+    vendor_dir = tmp_path / "vendor" / "magento" / "module-catalog" / "Model"
+    vendor_dir.mkdir(parents=True)
+    (vendor_dir / "Product.php").write_text(
+        "<?php\nnamespace Magento\\Catalog\\Model;\nclass Product {}\n"
+    )
+    app_dir = tmp_path / "app" / "code" / "Magento" / "Catalog" / "Model"
+    app_dir.mkdir(parents=True)
+    (app_dir / "Product.php").write_text(
+        "<?php\nnamespace Magento\\Catalog\\Model;\nclass Product {}\n"
+    )
+
+    result = mr.scan(tmp_path)
+
+    override = next(i for i in result.issues if i.tool == "core_override")
+    assert override.severity == "error" and override.scope == "app_code"

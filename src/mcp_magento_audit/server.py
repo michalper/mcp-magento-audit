@@ -97,8 +97,12 @@ def check_updates(path: str, target_php: str, target_magento: str) -> dict[str, 
         "own .php/.phtml files for ObjectManager::getInstance() — not a phpcs sniff: "
         "magento-coding-standard's only built-in check for this fires solely inside .phtml "
         "templates, not in Model/Block/Helper classes where bypassing constructor DI is "
-        "arguably more harmful. Each tool reports scanned=false with a reason when it can't "
-        "run, instead of staying silent."
+        "arguably more harmful. A sixth check (core_overrides) flags app/code classes that "
+        "redeclare a class already present in vendor/magento/* under the exact same fully "
+        "qualified name (a copy-pasted core file, not a legitimate di.xml preference/plugin) "
+        "— severity=error, so unlike the previous two it does become an upgrade_plan blocker, "
+        "since that silently blocks safely updating the vendor copy it shadows. Each tool "
+        "reports scanned=false with a reason when it can't run, instead of staying silent."
     )
 )
 def module_risk(path: str) -> dict[str, Any]:

@@ -199,6 +199,7 @@ def test_vendor_scope_issues_do_not_produce_blockers(tmp_path, monkeypatch):
         vendor_phpcs=ToolRun(True, None, "vendor (1 third-party magento2-module package(s))"),
         vendor_packages=("vendor/acme/module-foo",),
         object_manager_misuse=ToolRun(True, None, "app/code"),
+        core_overrides=ToolRun(True, None, "app/code vs vendor/magento"),
         issue_count=1,
         issues=(vendor_issue,),
     )
