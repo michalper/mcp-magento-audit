@@ -10,6 +10,7 @@ failed fetch is reported as `found=False` with a reason, never invented.
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -35,10 +36,16 @@ class ReleaseNotes:
 
 
 def _fetch(url: str) -> str:
-    request = urllib.request.Request(
-        url,
-        headers={"User-Agent": "mcp-magento-audit", "Accept": "application/vnd.github+json"},
-    )
+    headers = {"User-Agent": "mcp-magento-audit", "Accept": "application/vnd.github+json"}
+    # Unauthenticated GitHub REST API calls are capped at 60/hour per IP —
+    # easy to hit for a shared office/CI IP running fleet_overview/upgrade_plan
+    # across many projects. An optional token raises that to 5000/hour; this
+    # only ever reads public release data, so a read-only, no-scope token is
+    # enough.
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(request, timeout=5) as response:  # nosec B310
         body: bytes = response.read()
         return body.decode("utf-8")

@@ -90,3 +90,54 @@ def test_fetch_failure_and_no_cache_is_unavailable(monkeypatch):
     assert result.source == "unavailable"
     assert result.notes is None
     assert "0.0.0" in result.reason
+
+
+def _capture_request(monkeypatch):
+    captured: dict = {}
+
+    class _Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self) -> bytes:
+            return b"{}"
+
+    def fake_urlopen(request, timeout):
+        captured["headers"] = dict(request.headers)
+        return _Response()
+
+    monkeypatch.setattr(rn.urllib.request, "urlopen", fake_urlopen)
+    return captured
+
+
+def test_fetch_sends_no_authorization_header_without_a_token(monkeypatch):
+    captured = _capture_request(monkeypatch)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+
+    rn._fetch("https://api.github.com/repos/magento/magento2/releases/tags/2.4.7")
+
+    assert "Authorization" not in captured["headers"]
+
+
+def test_fetch_sends_bearer_token_from_github_token_env_var(monkeypatch):
+    captured = _capture_request(monkeypatch)
+    monkeypatch.setenv("GITHUB_TOKEN", "sekret")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+
+    rn._fetch("https://api.github.com/repos/magento/magento2/releases/tags/2.4.7")
+
+    assert captured["headers"]["Authorization"] == "Bearer sekret"
+
+
+def test_fetch_falls_back_to_gh_token_env_var(monkeypatch):
+    captured = _capture_request(monkeypatch)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setenv("GH_TOKEN", "other-sekret")
+
+    rn._fetch("https://api.github.com/repos/magento/magento2/releases/tags/2.4.7")
+
+    assert captured["headers"]["Authorization"] == "Bearer other-sekret"
