@@ -118,13 +118,23 @@ All eight planned tools (`project_status`, `check_updates`, `module_risk`,
       MCP server itself runs — a real gap for projects developed exclusively
       inside Docker/DDEV/Warden/Lando, where `scanned=false` can otherwise
       read as "found nothing" rather than "couldn't check".
-- [ ] An optional exec-prefix env var (e.g. wrapping every subprocess call
-      with `ddev exec --`) would close the Docker/DDEV gap above more
-      completely than documentation alone, but touches every subprocess call
-      site across 4 modules (`module_risk`, `php_compatibility`,
-      `security_audit`, `outdated_packages`) — a real design decision (env
-      var name, whether it's one global prefix or configurable per-tool),
-      not something to build speculatively without that decision made first.
+- [x] `MCP_MAGENTO_AUDIT_EXEC_PREFIX` env var wraps every subprocess call in
+      `_process.run()` — closes the Docker/DDEV gap above more completely
+      than documentation alone. Turned out to need only one central change,
+      not one per call site, since every one of the 4 modules
+      (`module_risk`, `php_compatibility`, `security_audit`,
+      `outdated_packages`) already funneled through this single shared
+      `run()`. Two things beyond just prepending the prefix were needed for
+      it to actually work against the common case (DDEV): (1) host-absolute
+      paths like `vendor/bin/phpcs` are meaningless inside a container, so
+      `run()` rewrites any argv path that's absolute *and* under `cwd` to be
+      relative to it first — this relies on the project directory being
+      bind-mounted with the same relative layout, true for DDEV/Warden/Lando's
+      usual setup; (2) `find_composer()`'s `shutil.which("composer")` result
+      is a host PATH lookup, not project-relative, so under a prefix it falls
+      back to the bare name `composer` instead, trusting the container's own
+      PATH. Both only activate when the env var is set — zero behavior change
+      otherwise, confirmed by the full existing test suite passing unchanged.
 - [x] ~~`module_risk`: flag `module.xml` `<sequence>` entries missing for
       modules a module's own code actually uses~~ — **declined** after
       checking against `Magento_Sales` (core's own flagship module, heavily

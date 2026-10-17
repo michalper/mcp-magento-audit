@@ -73,9 +73,22 @@ python3.12 -m venv .venv
 and `composer`. If that project only has PHP/Composer available *inside* a dev container
 — common for Magento — and this MCP server runs on the host, every one of those checks
 will correctly report `scanned=false` with a reason rather than silently being wrong, but
-that's easy to misread as "found nothing" instead of "couldn't check". Either run this
-server from inside the project's own dev container, or point it at a host where the
-project's PHP/Composer are actually installed.
+that's easy to misread as "found nothing" instead of "couldn't check".
+
+Set `MCP_MAGENTO_AUDIT_EXEC_PREFIX` to wrap every one of those calls in a command that
+runs it inside the container instead, e.g.:
+
+```bash
+export MCP_MAGENTO_AUDIT_EXEC_PREFIX="ddev exec --"
+# or: export MCP_MAGENTO_AUDIT_EXEC_PREFIX="docker compose exec -T app"
+```
+
+This assumes the usual bind-mount setup (the project directory mirrors the same
+relative layout inside the container, just under a different root) — host-absolute
+paths like `vendor/bin/phpcs` are rewritten relative to the project root before being
+wrapped, and `composer` resolves against the container's own `PATH` rather than the
+host's. If that assumption doesn't hold for a given setup, running this server from
+inside the dev container directly (no prefix needed) is the more reliable fallback.
 
 ### Rate limits on GitHub API calls
 
