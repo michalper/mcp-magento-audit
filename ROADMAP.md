@@ -90,11 +90,21 @@ All eight planned tools (`project_status`, `check_updates`, `module_risk`,
       collection access" either — those need real dataflow analysis, not
       AST/pattern matching, and would be too false-positive-prone at the
       level this project operates.
-- [ ] `module_risk`: flag `module.xml` `<sequence>` entries missing for
-      modules a module's own code actually depends on (DI-injected classes,
-      referenced layout handles/blocks) — the classic Magento
-      load-order-dependent bug. Bigger lift: needs mapping class/layout
-      references back to the owning module.
+- [x] ~~`module_risk`: flag `module.xml` `<sequence>` entries missing for
+      modules a module's own code actually uses~~ — **declined** after
+      checking against `Magento_Sales` (core's own flagship module, heavily
+      tested, definitely working correctly in production): it references
+      classes from 21 other modules via plain `use` statements, but its own
+      `module.xml` `<sequence>` declares only 5 of them — an 81%
+      "false-positive" rate using the naive heuristic (every referenced
+      module needs a sequence entry). The real rule is narrower and more
+      semantic than that: `<sequence>` governs the processing order of
+      `di.xml`/`events.xml`/layout merging/setup scripts between modules —
+      not class-level PHP dependencies, which are resolved by Composer's
+      autoloader independently of Magento's module sequence entirely. Same
+      conclusion as the `_isAllowed()` item: needs real domain understanding
+      of *when* sequence actually matters, not reference-counting, so too
+      false-positive-prone at the level this project operates.
 
 ## Distribution
 
