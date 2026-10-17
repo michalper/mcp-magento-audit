@@ -227,6 +227,76 @@ def test_invalid_phpstan_output_is_not_scanned(tmp_path, monkeypatch):
     assert "config invalid" in result.phpstan.reason
 
 
+def test_no_rector_config_skips_without_guessing(tmp_path):
+    _touch_binary(tmp_path, "vendor/bin/rector")
+
+    result = mr.scan(tmp_path)
+
+    assert result.rector.scanned is False
+    assert "rector.php" in result.rector.reason
+
+
+def test_missing_rector_binary_is_not_scanned(tmp_path):
+    (tmp_path / "rector.php").write_text("<?php return [];\n")
+
+    result = mr.scan(tmp_path)
+
+    assert result.rector.scanned is False
+    assert "vendor/bin/rector" in result.rector.reason
+
+
+def test_rector_uses_own_config_as_is_and_reports_warnings(tmp_path, monkeypatch):
+    (tmp_path / "rector.php").write_text("<?php return [];\n")
+    _touch_binary(tmp_path, "vendor/bin/rector")
+
+    captured: dict = {}
+
+    def fake_run(args, cwd):
+        captured["args"] = args
+        report = {
+            "totals": {"changed_files": 1, "errors": 0},
+            "file_diffs": [
+                {
+                    "file": "Model/Thing.php",
+                    "diff": "...",
+                    "changes": [{"rector": "Rector\\DeadCode\\Rector\\Foo", "line": 7}],
+                }
+            ],
+            "changed_files": ["Model/Thing.php"],
+        }
+        return subprocess.CompletedProcess(args, 2, stdout=json.dumps(report), stderr="")
+
+    monkeypatch.setattr(mr, "_run", fake_run)
+
+    result = mr.scan(tmp_path)
+
+    assert "--config=" not in " ".join(captured["args"])
+    assert result.rector.scanned is True
+    assert result.rector.target == "rector.php"
+    rector_issues = [i for i in result.issues if i.tool == "rector"]
+    assert len(rector_issues) == 1
+    issue = rector_issues[0]
+    assert issue.file == "Model/Thing.php"
+    assert issue.line == 7
+    assert issue.severity == "warning"
+    assert issue.source == "Rector\\DeadCode\\Rector\\Foo"
+
+
+def test_invalid_rector_output_is_not_scanned(tmp_path, monkeypatch):
+    (tmp_path / "rector.php").write_text("<?php return [];\n")
+    _touch_binary(tmp_path, "vendor/bin/rector")
+
+    def fake_run(args, cwd):
+        return subprocess.CompletedProcess(args, 255, stdout="", stderr="Fatal error: boom")
+
+    monkeypatch.setattr(mr, "_run", fake_run)
+
+    result = mr.scan(tmp_path)
+
+    assert result.rector.scanned is False
+    assert "boom" in result.rector.reason
+
+
 def test_issues_are_capped_per_tool_but_issue_count_stays_true(tmp_path, monkeypatch):
     (tmp_path / "phpcs.xml.dist").write_text("<ruleset><rule ref='Magento2'/></ruleset>")
     _touch_binary(tmp_path, "vendor/bin/phpcs")

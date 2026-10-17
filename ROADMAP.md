@@ -5,8 +5,16 @@
 All five planned tools (`project_status`, `check_updates`, `module_risk`,
 `fetch_release_notes`, `upgrade_plan`) are done.
 
-- Rector-based checks beyond PHP-version compatibility (dead code, Magento-specific rules)
-  — deferred, see commit history for the `withPhpSets()` design.
+- [x] Rector-based dead-code/quality checks in `module_risk` (the project's own
+      `rector.php`, as-is — not the PHP-version compatibility check, which
+      is a separate, synthetic-config signal in `check_updates`).
+
+## Distribution
+
+- [ ] Publish to PyPI as `mcp-magento-audit`, then register it on the official MCP
+      Registry (`registry.modelcontextprotocol.io`) via `mcp-publisher` — process and
+      `server.json` shape already checked, see commit history. Deliberately not done yet;
+      revisit once the project is past "early stage".
 
 ## Housekeeping
 

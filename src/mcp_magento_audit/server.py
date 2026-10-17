@@ -77,14 +77,16 @@ def check_updates(path: str, target_php: str, target_magento: str) -> dict[str, 
 
 @server.tool(
     description=(
-        "Scans the given Magento project's custom code for coding-standard violations "
-        "and static-analysis issues by shelling out to the project's own vendor/bin/phpcs "
-        "and vendor/bin/phpstan. phpcs: if the project has its own phpcs.xml(.dist), that "
-        "configuration is used as-is; otherwise falls back to the Magento2 standard on "
-        "app/code. phpstan: only run if the project has its own phpstan.neon(.dist) — "
-        "unlike phpcs there is no safe generic fallback (no paths/level/extensions to "
-        "guess), so it is skipped rather than guessing. Each tool reports scanned=false "
-        "with a reason when it can't run, instead of staying silent."
+        "Scans the given Magento project's custom code for coding-standard violations, "
+        "static-analysis issues and dead-code/quality suggestions by shelling out to the "
+        "project's own vendor/bin/phpcs, vendor/bin/phpstan and vendor/bin/rector. phpcs: "
+        "if the project has its own phpcs.xml(.dist), that configuration is used as-is; "
+        "otherwise falls back to the Magento2 standard on app/code. phpstan and rector: "
+        "only run if the project has its own phpstan.neon(.dist)/rector.php — unlike phpcs "
+        "there is no safe generic fallback (no paths/level/extensions/rule sets to guess), "
+        "so they're skipped rather than guessing. rector's findings are reported as "
+        "severity=warning (suggestions, not pass/fail violations). Each tool reports "
+        "scanned=false with a reason when it can't run, instead of staying silent."
     )
 )
 def module_risk(path: str) -> dict[str, Any]:

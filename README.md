@@ -88,7 +88,7 @@ ran at all, so a clean result elsewhere isn't mistaken for "everything was check
 |---|---|---|
 | `project_status` | **working** | Magento version, PHP requirement, package count, abandoned packages |
 | `check_updates` | **working** | per-package verdict against a target PHP/Magento version, plus a Rector-based check of whether the code itself would need changes |
-| `module_risk` | **working** | scans code via `phpcs` (Magento2 coding standard) and the project's own `phpstan` for deprecated API usage and type errors |
+| `module_risk` | **working** | scans code via `phpcs` (Magento2 coding standard), the project's own `phpstan`, and the project's own `rector.php` (dead code/quality) |
 | `fetch_release_notes` | **working** | release notes from `magento/magento2` GitHub Releases, **without answering from the model's memory** |
 | `upgrade_plan` | **working** | combines the other tools into a list of concrete blockers, with `ready=true` only once it's empty |
 

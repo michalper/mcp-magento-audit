@@ -93,3 +93,4 @@ def test_ready_stays_true_but_unverified_lists_missing_tools(tmp_path, monkeypat
     assert "code_compatibility" in joined
     assert "phpcs" in joined
     assert "phpstan" in joined
+    assert "rector" in joined

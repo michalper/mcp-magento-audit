@@ -81,6 +81,8 @@ def _unverified_signals(update_check: UpdateCheck, risk: ModuleRiskResult) -> li
         unverified.append(f"phpcs: {risk.phpcs.reason}")
     if not risk.phpstan.scanned:
         unverified.append(f"phpstan: {risk.phpstan.reason}")
+    if not risk.rector.scanned:
+        unverified.append(f"rector: {risk.rector.reason}")
     return unverified
 
 

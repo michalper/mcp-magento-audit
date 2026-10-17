@@ -9,14 +9,20 @@ deprecated-API detection or type analysis:
 - `vendor/bin/phpstan` (typically with `bitexpert/phpstan-magento`) — type
   errors and misuse of Magento's DI/plugin/interceptor magic that phpcs's
   pattern-based sniffs can't see.
+- `vendor/bin/rector` with the project's *own* `rector.php` (dead code,
+  code-quality rules — not the PHP-version compatibility check, which lives
+  in `php_compatibility.py` with its own, synthetic, throwaway config: a
+  target PHP version isn't something a project's own rector.php would be
+  tuned for).
 
-Both are only run against the project's *own* configuration
-(`phpcs.xml`/`phpcs.xml.dist`, `phpstan.neon`/`.dist`) when present, instead
-of forcing ours — agencies commonly tune these (excluded sniffs, baselines,
-a narrower scan scope). phpcs has an official bare `--standard=Magento2`
-fallback for projects without their own config; phpstan has no equivalent
-(no `paths`/level/extensions to guess), so it is skipped entirely without
-one, rather than guessing.
+All three are only run against the project's *own* configuration
+(`phpcs.xml`/`phpcs.xml.dist`, `phpstan.neon`/`.dist`, `rector.php`) when
+present, instead of forcing ours — agencies commonly tune these (excluded
+sniffs, baselines, a narrower scan scope, skipped rules). phpcs has an
+official bare `--standard=Magento2` fallback for projects without their own
+config; phpstan and rector have no equivalent (no `paths`/level/extensions,
+or rule sets, to guess), so they are skipped entirely without one, rather
+than guessing.
 
 `issue_count` on the result is always the true total found by each tool;
 the `issues` list itself is capped per tool (`MAX_STORED_ISSUES_PER_TOOL`) so
@@ -46,11 +52,12 @@ MAX_STORED_ISSUES_PER_TOOL = 50
 PHPSTAN_MEMORY_LIMIT = "2G"
 PHPCS_CONFIG_FILE_NAMES = ("phpcs.xml", "phpcs.xml.dist")
 PHPSTAN_CONFIG_FILE_NAMES = ("phpstan.neon", "phpstan.neon.dist", "phpstan.dist.neon")
+RECTOR_CONFIG_FILE_NAMES = ("rector.php",)
 
 
 @dataclass(frozen=True)
 class Issue:
-    tool: str  # "phpcs" | "phpstan"
+    tool: str  # "phpcs" | "phpstan" | "rector"
     file: str
     line: int
     severity: str  # "error" | "warning"
@@ -69,6 +76,7 @@ class ToolRun:
 class ModuleRiskResult:
     phpcs: ToolRun
     phpstan: ToolRun
+    rector: ToolRun
     issue_count: int
     issues: tuple[Issue, ...]
 
@@ -139,6 +147,28 @@ def _parse_phpstan_report(stdout: str, project_path: Path) -> tuple[Issue, ...]:
         issues.append(
             Issue(tool="phpstan", file="", line=0, severity="error", source="", message=message)
         )
+    return tuple(issues)
+
+
+def _parse_rector_report(stdout: str, project_path: Path) -> tuple[Issue, ...]:
+    report: Any = _extract_json(stdout)
+    issues: list[Issue] = []
+    for file_diff in report.get("file_diffs") or []:
+        # rector reports paths already relative to `cwd` (= project_path) —
+        # unlike phpcs/phpstan, which report absolute paths.
+        relative = str(file_diff.get("file", ""))
+        for change in file_diff.get("changes") or []:
+            rule = str(change.get("rector", ""))
+            issues.append(
+                Issue(
+                    tool="rector",
+                    file=relative,
+                    line=int(change.get("line") or 0),
+                    severity="warning",  # a dry-run suggestion, not a pass/fail violation
+                    source=rule,
+                    message=f"{rule} would change this",
+                )
+            )
     return tuple(issues)
 
 
@@ -222,6 +252,33 @@ def _run_phpstan(project_path: Path) -> tuple[ToolRun, tuple[Issue, ...]]:
     )
 
 
+def _run_rector(project_path: Path) -> tuple[ToolRun, tuple[Issue, ...]]:
+    config = _find_config(project_path, RECTOR_CONFIG_FILE_NAMES)
+    if config is None:
+        reason = "no rector.php in project — skipping dead-code/quality checks"
+        return ToolRun(scanned=False, reason=reason, target=""), ()
+
+    rector_path = project_path / "vendor" / "bin" / "rector"
+    return _execute(
+        binary_path=rector_path,
+        binary_label="rector",
+        install_hint="composer require --dev rector/rector",
+        # No --config override: unlike php_compatibility.py's synthetic,
+        # throwaway config, this deliberately uses whatever rule sets the
+        # project's own rector.php picked (dead code, code quality, ...).
+        args=[
+            str(rector_path),
+            "process",
+            "--dry-run",
+            "--no-progress-bar",
+            "--output-format=json",
+        ],
+        project_path=project_path,
+        target=config.name,
+        parse=_parse_rector_report,
+    )
+
+
 def _cap(issues: tuple[Issue, ...]) -> tuple[Issue, ...]:
     """Caps the stored issues, keeping errors over warnings when truncating
     (insertion order alone could bury a real error behind earlier warnings)."""
@@ -232,10 +289,15 @@ def _cap(issues: tuple[Issue, ...]) -> tuple[Issue, ...]:
 def scan(project_path: Path) -> ModuleRiskResult:
     phpcs_run, phpcs_issues = _run_phpcs(project_path)
     phpstan_run, phpstan_issues = _run_phpstan(project_path)
+    rector_run, rector_issues = _run_rector(project_path)
 
-    issue_count = len(phpcs_issues) + len(phpstan_issues)
-    issues = _cap(phpcs_issues) + _cap(phpstan_issues)
+    issue_count = len(phpcs_issues) + len(phpstan_issues) + len(rector_issues)
+    issues = _cap(phpcs_issues) + _cap(phpstan_issues) + _cap(rector_issues)
 
     return ModuleRiskResult(
-        phpcs=phpcs_run, phpstan=phpstan_run, issue_count=issue_count, issues=issues
+        phpcs=phpcs_run,
+        phpstan=phpstan_run,
+        rector=rector_run,
+        issue_count=issue_count,
+        issues=issues,
     )
