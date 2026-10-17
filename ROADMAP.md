@@ -53,10 +53,29 @@ All eight planned tools (`project_status`, `check_updates`, `module_risk`,
       O(1) dict lookup per `app/code` candidate, not a filesystem walk per
       candidate — confirmed fast against a real ~8500-class core tree,
       ~1.3s). `scanned=false` only if there's no `vendor/magento` at all.
-- [ ] `module_risk`: flag admin/customer controller actions missing
-      `_isAllowed()` (or an always-`true` stub) — not a phpcs sniff, needs
-      its own AST-ish check over `app/code`'s `Controller/Adminhtml` and
-      customer-area action classes. Deliberately not pursuing N+1-query
+- [x] ~~`module_risk`: flag admin controller actions missing `_isAllowed()`
+      (or an always-`true` stub)~~ — **declined** after checking against a
+      real Magento core checkout, *before* writing any code: (1) `return
+      true;` in `_isAllowed()` is a legitimate pattern core itself uses
+      (`Backend/Controller/Adminhtml/{Auth,Index,Denied/Index}.php`,
+      `Captcha/.../Refresh.php` — login/denied/captcha pages must be
+      reachable pre-ACL-check, not just a bug pattern); (2) "no own
+      `ADMIN_RESOURCE`/`_isAllowed()` in this file" has a ~72% false-positive
+      rate on core itself (570/795 concrete admin controllers) — Magento's
+      idiomatic pattern is declaring `ADMIN_RESOURCE` once on a shared base
+      action class and letting leaf actions (`Save.php`, `Delete.php`, ...)
+      inherit it, which a per-file check can't distinguish from "forgot to
+      set it" without resolving the class hierarchy. Same category as the
+      N+1-query/service-contracts items below: needs real
+      semantic/inheritance analysis, not file-local pattern matching, so too
+      false-positive-prone at the level this project operates. (Also: this
+      pattern is admin-only — checked `Customer/Controller/{Account,Address,
+      Section,Ajax}` directly, no `_isAllowed()`/ACL equivalent exists for
+      the customer/frontend area at all, so the original item's mention of
+      "customer-area action classes" was itself a wrong assumption.)
+- [ ] `module_risk`: flag empty `catch (...) {}` blocks and discouraged debug
+      calls (`var_dump`/`print_r`/`echo`/`die` left in production code) —
+      cheap, low-noise AST checks. Deliberately not pursuing N+1-query
       detection or "service contracts vs. direct collection access" —
       those need real dataflow analysis, not AST/pattern matching, and would
       be too false-positive-prone at the level this project operates.
