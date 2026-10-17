@@ -15,6 +15,11 @@ def _report(entries: dict) -> str:
     return json.dumps({"files": entries})
 
 
+def _write_composer(tmp_path, packages: list[dict]) -> None:
+    (tmp_path / "composer.json").write_text(json.dumps({"require": {}}))
+    (tmp_path / "composer.lock").write_text(json.dumps({"packages": packages}))
+
+
 def test_no_app_code_and_no_config_skips_both_tools(tmp_path):
     result = mr.scan(tmp_path)
 
@@ -414,3 +419,113 @@ def test_combined_issue_count_includes_both_tools(tmp_path, monkeypatch):
 
     assert result.issue_count == 2
     assert {i.tool for i in result.issues} == {"phpcs", "phpstan"}
+
+
+def test_vendor_phpcs_not_scanned_without_composer_files(tmp_path):
+    result = mr.scan(tmp_path)
+
+    assert result.vendor_phpcs.scanned is False
+    assert "composer.json/composer.lock" in result.vendor_phpcs.reason
+    assert result.vendor_packages == ()
+
+
+def test_vendor_phpcs_scanned_with_nothing_when_no_third_party_modules(tmp_path):
+    _write_composer(tmp_path, [{"name": "symfony/console", "version": "6.0", "type": "library"}])
+
+    result = mr.scan(tmp_path)
+
+    assert result.vendor_phpcs.scanned is True
+    assert result.vendor_phpcs.target == "vendor"
+    assert result.vendor_packages == ()
+
+
+def test_vendor_phpcs_excludes_magento_core_packages(tmp_path):
+    package = {"name": "magento/module-catalog", "version": "103.0", "type": "magento2-module"}
+    _write_composer(tmp_path, [package])
+    (tmp_path / "vendor" / "magento" / "module-catalog").mkdir(parents=True)
+
+    result = mr.scan(tmp_path)
+
+    assert result.vendor_phpcs.scanned is True
+    assert result.vendor_packages == ()
+
+
+def test_vendor_phpcs_excludes_packages_without_an_installed_directory(tmp_path):
+    _write_composer(
+        tmp_path, [{"name": "acme/module-foo", "version": "1.0", "type": "magento2-module"}]
+    )
+    # No vendor/acme/module-foo directory actually created.
+
+    result = mr.scan(tmp_path)
+
+    assert result.vendor_packages == ()
+
+
+def test_vendor_phpcs_missing_binary_is_not_scanned(tmp_path):
+    _write_composer(
+        tmp_path, [{"name": "acme/module-foo", "version": "1.0", "type": "magento2-module"}]
+    )
+    (tmp_path / "vendor" / "acme" / "module-foo").mkdir(parents=True)
+
+    result = mr.scan(tmp_path)
+
+    assert result.vendor_phpcs.scanned is False
+    assert "vendor/bin/phpcs" in result.vendor_phpcs.reason
+
+
+def test_vendor_phpcs_scans_third_party_magento_modules(tmp_path, monkeypatch):
+    _write_composer(
+        tmp_path, [{"name": "acme/module-foo", "version": "1.0", "type": "magento2-module"}]
+    )
+    module_dir = tmp_path / "vendor" / "acme" / "module-foo"
+    module_dir.mkdir(parents=True)
+    _touch_binary(tmp_path, "vendor/bin/phpcs")
+
+    captured: dict = {}
+
+    def fake_run(args, cwd):
+        captured["args"] = args
+        file_path = module_dir / "Model.php"
+        messages = [
+            {
+                "message": "Class \\Foo is deprecated",
+                "source": "Magento2.Legacy.DeprecatedClasses",
+                "type": "ERROR",
+                "line": 7,
+            }
+        ]
+        return subprocess.CompletedProcess(
+            args, 2, stdout=_report({str(file_path): {"messages": messages}}), stderr=""
+        )
+
+    monkeypatch.setattr(mr, "_run_vendor", fake_run)
+
+    result = mr.scan(tmp_path)
+
+    assert "--standard=Magento2" in captured["args"]
+    assert str(module_dir) in captured["args"]
+    assert result.vendor_phpcs.scanned is True
+    assert result.vendor_packages == ("vendor/acme/module-foo",)
+    vendor_issues = [i for i in result.issues if i.scope == "vendor"]
+    assert len(vendor_issues) == 1
+    assert vendor_issues[0].file == "vendor/acme/module-foo/Model.php"
+    assert vendor_issues[0].tool == "phpcs"
+
+
+def test_app_code_issues_default_to_app_code_scope(tmp_path, monkeypatch):
+    (tmp_path / "phpcs.xml.dist").write_text("<ruleset><rule ref='Magento2'/></ruleset>")
+    _touch_binary(tmp_path, "vendor/bin/phpcs")
+
+    def fake_run(args, cwd):
+        file_path = tmp_path / "Model.php"
+        messages = [{"message": "issue", "type": "ERROR", "line": 1}]
+        return subprocess.CompletedProcess(
+            args, 2, stdout=_report({str(file_path): {"messages": messages}}), stderr=""
+        )
+
+    monkeypatch.setattr(mr, "_run", fake_run)
+
+    result = mr.scan(tmp_path)
+
+    phpcs_issues = [i for i in result.issues if i.tool == "phpcs" and i.scope == "app_code"]
+    assert len(phpcs_issues) == 1

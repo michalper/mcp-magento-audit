@@ -15,21 +15,25 @@ and Magento version**, **quality of custom modules**, and **dependency security*
 It answers the question that never stops coming up in Magento agencies:
 *"can we bump this client to a newer version, what's blocking it, and where do we start?"*
 
-> **Status: early stage.** Built on evenings/weekends. All five planned tools
-> (`project_status`, `check_updates`, `module_risk`, `fetch_release_notes`,
-> `upgrade_plan`) are working. See `ROADMAP.md` for what's next.
+> **Status: early stage.** Built on evenings/weekends. All seven planned tools
+> (`project_status`, `check_updates`, `module_risk`, `security_audit`, `outdated_packages`,
+> `fetch_release_notes`, `upgrade_plan`) are working. See `ROADMAP.md` for what's next.
 
 ## How this differs from `composer audit`
 
-`composer audit` and `composer outdated` are built into Composer and do their job well.
-This server targets three things they don't give you:
+`composer audit` and `composer outdated` are built into Composer and do their job well —
+`security_audit` and `outdated_packages` actually shell out to them rather than
+reimplementing a CVE database or version comparison. This server targets what plain
+Composer doesn't give you:
 
-1. **They don't see `app/code`.** Custom modules don't exist on Packagist, so they get
+1. **It doesn't see `app/code`.** Custom modules don't exist on Packagist, so they get
    zero coverage from vulnerability databases — and that's exactly the code agencies write.
-2. **They don't combine axes.** Nobody gets one answer: *this module blocks the upgrade,
+   `module_risk` covers that side with `phpcs`/`phpstan`/`rector` instead.
+2. **It doesn't combine axes.** Nobody gets one answer: *this module blocks the upgrade,
    has an open CVE, is abandoned by its author, and has the worst complexity in the
-   project — fix this one first.*
-3. **They don't aggregate across projects.** "Which of our twenty stores can be upgraded
+   project — fix this one first.* `upgrade_plan` does, folding `security_audit`'s
+   advisories in alongside composer-constraint and code-quality blockers.
+3. **It doesn't aggregate across projects.** "Which of our twenty stores can be upgraded
    today" requires stitching results together from many directories by hand.
 
 **What this server doesn't pretend to be:** there's no clean dataset of "module X works
@@ -90,7 +94,9 @@ ran at all, so a clean result elsewhere isn't mistaken for "everything was check
 |---|---|---|
 | `project_status` | **working** | Magento version, PHP requirement, package count, abandoned packages |
 | `check_updates` | **working** | per-package verdict against a target PHP/Magento version, plus a Rector-based check of whether the code itself would need changes |
-| `module_risk` | **working** | scans code via `phpcs` (Magento2 coding standard), the project's own `phpstan`, and the project's own `rector.php` (dead code/quality) |
+| `module_risk` | **working** | scans code via `phpcs` (Magento2 coding standard), the project's own `phpstan`, and the project's own `rector.php` (dead code/quality) — plus a separate `phpcs` pass over third-party `vendor/` Magento modules (informational, not an upgrade blocker) |
+| `security_audit` | **working** | every installed package in `composer.lock` — core Magento, third-party `vendor/` extensions, dev dependencies — checked for known advisories via `composer audit` |
+| `outdated_packages` | **working** | every installed package checked against `composer outdated` for a newer available version — independent of known CVEs or target-version compatibility |
 | `fetch_release_notes` | **working** | release notes from `magento/magento2` GitHub Releases, **without answering from the model's memory** |
 | `upgrade_plan` | **working** | combines the other tools into a list of concrete blockers, with `ready=true` only once it's empty |
 

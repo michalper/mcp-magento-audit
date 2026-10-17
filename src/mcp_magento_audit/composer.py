@@ -22,10 +22,18 @@ class Package:
     version: str
     requires: dict[str, str] = field(default_factory=dict)
     abandoned: bool = False
+    type: str = "library"
 
     @property
     def php_requirement(self) -> str | None:
         return self.requires.get("php")
+
+
+# The monorepo checkouts of Magento core itself (e.g. a clone of
+# github.com/magento/magento2 used to develop/test a module against core)
+# declare their own version this way — there's no magento/product-*-edition
+# dependency to read it from, because the root package *is* the product.
+ROOT_PACKAGE_NAMES = ("magento/magento2ce", "magento/magento2ee")
 
 
 @dataclass(frozen=True)
@@ -33,15 +41,22 @@ class Project:
     path: Path
     packages: tuple[Package, ...]
     project_php_requirement: str | None
+    root_name: str | None
+    root_version: str | None
 
     @property
     def magento_version(self) -> str | None:
-        """Version taken from the Magento product package, if the project has one."""
+        """Version taken from the Magento product package, if the project has
+        one as a dependency (the common case: a store installed via the
+        magento/project-*-edition metapackage) — otherwise, from the
+        project's own composer.json if it *is* a Magento core checkout."""
         candidates = ("magento/product-community-edition", "magento/product-enterprise-edition")
         for candidate in candidates:
             for p in self.packages:
                 if p.name == candidate:
                     return p.version
+        if self.root_name in ROOT_PACKAGE_NAMES:
+            return self.root_version
         return None
 
     @property
@@ -82,6 +97,7 @@ def load_project(directory: str | Path) -> Project:
                     version=entry.get("version", "?"),
                     requires={k: str(v) for k, v in (entry.get("require") or {}).items()},
                     abandoned=name in abandoned or bool(entry.get("abandoned")),
+                    type=entry.get("type") or "library",
                 )
             )
 
@@ -89,4 +105,6 @@ def load_project(directory: str | Path) -> Project:
         path=dir_path,
         packages=tuple(packages),
         project_php_requirement=(composer.get("require") or {}).get("php"),
+        root_name=composer.get("name"),
+        root_version=composer.get("version"),
     )

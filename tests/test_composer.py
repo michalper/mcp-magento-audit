@@ -33,6 +33,24 @@ def test_php_requirement_of_specific_package():
     assert package.php_requirement == "^7.4"
 
 
+def test_package_type_defaults_to_library(tmp_path):
+    _write(
+        tmp_path,
+        {"require": {}},
+        {"packages": [{"name": "foo/bar", "version": "1.0.0"}]},
+    )
+    assert load_project(tmp_path).packages[0].type == "library"
+
+
+def test_package_type_is_read_from_lock(tmp_path):
+    _write(
+        tmp_path,
+        {"require": {}},
+        {"packages": [{"name": "vendor/module", "version": "1.0.0", "type": "magento2-module"}]},
+    )
+    assert load_project(tmp_path).packages[0].type == "magento2-module"
+
+
 def test_missing_directory_raises_error():
     with pytest.raises(ProjectError, match="is not a directory"):
         load_project("/no/such/directory")
@@ -83,5 +101,38 @@ def test_enterprise_edition_is_recognised(tmp_path):
         tmp_path,
         {"require": {}},
         {"packages": [{"name": "magento/product-enterprise-edition", "version": "2.4.7"}]},
+    )
+    assert load_project(tmp_path).magento_version == "2.4.7"
+
+
+def test_magento_core_checkout_falls_back_to_its_own_root_version(tmp_path):
+    """A clone of the magento/magento2 monorepo itself (no
+    magento/product-*-edition dependency — the root package *is* the
+    product) declares its version in its own composer.json."""
+    _write(
+        tmp_path,
+        {"name": "magento/magento2ce", "version": "2.4.9", "require": {}},
+        {"packages": []},
+    )
+    assert load_project(tmp_path).magento_version == "2.4.9"
+
+
+def test_unrelated_root_package_does_not_leak_its_version_as_magento_version(tmp_path):
+    _write(
+        tmp_path,
+        {"name": "acme/some-other-project", "version": "9.9.9", "require": {}},
+        {"packages": []},
+    )
+    assert load_project(tmp_path).magento_version is None
+
+
+def test_product_package_dependency_wins_over_root_version(tmp_path):
+    """The common case (a store installed via magento/project-*-edition) is
+    preferred over the root composer.json's own version, which in that case
+    belongs to the client's own project, not to Magento."""
+    _write(
+        tmp_path,
+        {"name": "acme/client-store", "version": "1.0.0", "require": {}},
+        {"packages": [{"name": "magento/product-community-edition", "version": "2.4.7"}]},
     )
     assert load_project(tmp_path).magento_version == "2.4.7"

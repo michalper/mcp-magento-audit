@@ -13,7 +13,9 @@ from mcp.server.mcpserver import MCPServer
 
 from .composer import ProjectError, load_project
 from .module_risk import scan as scan_module_risk
+from .outdated_packages import check as check_outdated
 from .release_notes import release_notes_for_version
+from .security_audit import audit as audit_security
 from .updates import check
 from .upgrade_plan import build as build_upgrade_plan
 
@@ -85,8 +87,13 @@ def check_updates(path: str, target_php: str, target_magento: str) -> dict[str, 
         "only run if the project has its own phpstan.neon(.dist)/rector.php — unlike phpcs "
         "there is no safe generic fallback (no paths/level/extensions/rule sets to guess), "
         "so they're skipped rather than guessing. rector's findings are reported as "
-        "severity=warning (suggestions, not pass/fail violations). Each tool reports "
-        "scanned=false with a reason when it can't run, instead of staying silent."
+        "severity=warning (suggestions, not pass/fail violations). A fourth, separate check "
+        "(vendor_phpcs) scans third-party vendor/ Magento modules (type magento2-module in "
+        "composer.lock, excluding magento/* core) with the bare Magento2 standard — the "
+        "scanned package list is in vendor_packages, and those issues carry scope='vendor' "
+        "(vs 'app_code' for the rest) so callers can tell code they can fix from code they "
+        "can't. Each tool reports scanned=false with a reason when it can't run, instead of "
+        "staying silent."
     )
 )
 def module_risk(path: str) -> dict[str, Any]:
@@ -96,6 +103,45 @@ def module_risk(path: str) -> dict[str, Any]:
         return {"error": f"{project_path} is not a directory"}
 
     return asdict(scan_module_risk(project_path))
+
+
+@server.tool(
+    description=(
+        "Checks every installed package in the given Magento project's composer.lock — "
+        "core Magento, third-party vendor/ extensions, dev dependencies, not just custom "
+        "app/code — against known security advisories via `composer audit`. Returns "
+        "scanned=false with a reason (e.g. no composer.lock, composer not found) rather "
+        "than silently reporting zero advisories when the check never ran."
+    )
+)
+def security_audit(path: str) -> dict[str, Any]:
+    """Checks the installed packages of the project at `path` for known advisories."""
+    project_path = Path(path).expanduser().resolve()
+    if not project_path.is_dir():
+        return {"error": f"{project_path} is not a directory"}
+
+    return asdict(audit_security(project_path))
+
+
+@server.tool(
+    description=(
+        "Checks every installed package in the given Magento project's composer.lock "
+        "against `composer outdated` to report which ones have a newer version available "
+        "— independent of security_audit (known CVEs) and check_updates (compatibility with "
+        "a target PHP/Magento version): a package can be behind on releases with neither of "
+        "those issues, and that's still tech debt worth surfacing. Each package's own "
+        "latest-status (e.g. semver-safe-update vs update-possible) is included as reported "
+        "by Composer. Returns scanned=false with a reason (e.g. no composer.lock, composer "
+        "not found) rather than silently reporting zero outdated packages."
+    )
+)
+def outdated_packages(path: str) -> dict[str, Any]:
+    """Checks the installed packages of the project at `path` for available updates."""
+    project_path = Path(path).expanduser().resolve()
+    if not project_path.is_dir():
+        return {"error": f"{project_path} is not a directory"}
+
+    return asdict(check_outdated(project_path))
 
 
 @server.tool(
@@ -114,12 +160,18 @@ def fetch_release_notes(version: str) -> dict[str, Any]:
 @server.tool(
     description=(
         "Builds an upgrade plan for the given Magento project against a target PHP and "
-        "Magento version by combining check_updates, module_risk and fetch_release_notes. "
-        "The verdict is a list of concrete blockers (composer constraints, code that "
-        "Rector flags as needing changes, phpcs/phpstan errors), each with its own reason "
-        "— not a single abstract score. ready=true only when that list is empty, but check "
-        "'unverified' too: it lists any signal that couldn't run at all (e.g. phpstan/rector "
-        "not installed in the project), which ready=true does not account for."
+        "Magento version by combining check_updates, module_risk, security_audit, "
+        "outdated_packages and fetch_release_notes. The verdict is a list of concrete "
+        "blockers (composer constraints, code that Rector flags as needing changes, "
+        "phpcs/phpstan errors in the project's own app/code, security advisories against "
+        "installed packages), each with its own reason — not a single abstract score. "
+        "outdated_packages and vendor/-scope module_risk issues are informational only "
+        "(included in the full result, not in blockers): being behind on releases, or a "
+        "third-party module's own code quality, don't block *this* upgrade the way an "
+        "app/code error or a composer constraint does. ready=true only when the blockers "
+        "list is empty, but check 'unverified' too: it lists any signal that couldn't run "
+        "at all (e.g. phpstan/rector not installed, or composer missing for "
+        "security_audit/outdated_packages), which ready=true does not account for."
     )
 )
 def upgrade_plan(path: str, target_php: str, target_magento: str) -> dict[str, Any]:

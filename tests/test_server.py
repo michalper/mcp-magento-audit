@@ -1,7 +1,12 @@
 from pathlib import Path
 
 from mcp_magento_audit.magento_versions import PhpRequirement
-from mcp_magento_audit.server import check_updates, project_status
+from mcp_magento_audit.server import (
+    check_updates,
+    outdated_packages,
+    project_status,
+    security_audit,
+)
 
 STORE = str(Path(__file__).parent / "fixtures" / "store")
 
@@ -34,3 +39,25 @@ def test_check_updates_full_result(monkeypatch):
 
 def test_check_updates_invalid_path_returns_error_not_exception():
     assert "error" in check_updates("/no/such/directory", target_php="8.3", target_magento="2.4.7")
+
+
+def test_security_audit_invalid_path_returns_error_not_exception():
+    assert "error" in security_audit("/no/such/directory")
+
+
+def test_security_audit_without_composer_lock_is_not_scanned(tmp_path):
+    result = security_audit(str(tmp_path))
+
+    assert result["scanned"] is False
+    assert "composer.lock" in result["reason"]
+
+
+def test_outdated_packages_invalid_path_returns_error_not_exception():
+    assert "error" in outdated_packages("/no/such/directory")
+
+
+def test_outdated_packages_without_composer_lock_is_not_scanned(tmp_path):
+    result = outdated_packages(str(tmp_path))
+
+    assert result["scanned"] is False
+    assert "composer.lock" in result["reason"]

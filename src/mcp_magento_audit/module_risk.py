@@ -24,6 +24,20 @@ config; phpstan and rector have no equivalent (no `paths`/level/extensions,
 or rule sets, to guess), so they are skipped entirely without one, rather
 than guessing.
 
+A fourth, separate check (`vendor_phpcs`) covers the one thing the three
+above deliberately don't: third-party Magento modules installed in
+`vendor/` (marketplace extensions, agency-bought modules) rather than
+`app/code`. It's phpcs-only, always with the bare `Magento2` standard (never
+the project's own `phpcs.xml` — that's tuned for the project's own code, not
+a vendor's) — no phpstan or rector, deliberately: static-analysis findings
+on someone else's code aren't actionable the same way `app/code`'s are, and
+without the project's own bootstrap config, broad phpstan runs over
+arbitrary third-party packages are noisy and prone to false positives. The
+target packages are discovered from `composer.lock`: every package of type
+`magento2-module` that isn't `magento/*` (core, not a third-party module, and
+already covered by `security_audit`'s CVE check for known vulnerabilities
+rather than coding-standard violations).
+
 `issue_count` on the result is always the true total found by each tool;
 the `issues` list itself is capped per tool (`MAX_STORED_ISSUES_PER_TOOL`) so
 one badly-neglected module can't blow up the result size while still
@@ -32,6 +46,7 @@ letting the caller see how much worse it actually is than what's shown.
 
 from __future__ import annotations
 
+import functools
 import json
 import subprocess
 from collections.abc import Callable
@@ -41,10 +56,13 @@ from typing import Any
 
 from ._process import extract_json as _extract_json
 from ._process import run as _run_process
+from .composer import ProjectError
+from .composer import load_project as _load_project
 
 STANDARD = "Magento2"
 FALLBACK_TARGET = "app/code"
 TIMEOUT_SECONDS = 120
+VENDOR_SCAN_TIMEOUT_SECONDS = 300
 MAX_STORED_ISSUES_PER_TOOL = 50
 # phpstan's own default (128M) reliably crashes on a real Magento-scale
 # project reflecting the full framework (confirmed against a real module) -
@@ -63,6 +81,7 @@ class Issue:
     severity: str  # "error" | "warning"
     source: str
     message: str
+    scope: str = "app_code"  # "app_code" | "vendor"
 
 
 @dataclass(frozen=True)
@@ -77,12 +96,18 @@ class ModuleRiskResult:
     phpcs: ToolRun
     phpstan: ToolRun
     rector: ToolRun
+    vendor_phpcs: ToolRun
+    vendor_packages: tuple[str, ...]
     issue_count: int
     issues: tuple[Issue, ...]
 
 
 def _run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return _run_process(args, cwd, TIMEOUT_SECONDS)
+
+
+def _run_vendor(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    return _run_process(args, cwd, VENDOR_SCAN_TIMEOUT_SECONDS)
 
 
 def _relative(file_path: str, project_path: Path) -> str:
@@ -100,7 +125,9 @@ def _find_config(project_path: Path, names: tuple[str, ...]) -> Path | None:
     return None
 
 
-def _parse_phpcs_report(stdout: str, project_path: Path) -> tuple[Issue, ...]:
+def _parse_phpcs_report(
+    stdout: str, project_path: Path, *, scope: str = "app_code"
+) -> tuple[Issue, ...]:
     report: Any = _extract_json(stdout)
     issues: list[Issue] = []
     for file_path, file_report in (report.get("files") or {}).items():
@@ -114,6 +141,7 @@ def _parse_phpcs_report(stdout: str, project_path: Path) -> tuple[Issue, ...]:
                     severity=str(message.get("type", "")).lower(),
                     source=str(message.get("source", "")),
                     message=str(message.get("message", "")),
+                    scope=scope,
                 )
             )
     return tuple(issues)
@@ -181,6 +209,7 @@ def _execute(
     project_path: Path,
     target: str,
     parse: Callable[[str, Path], tuple[Issue, ...]],
+    runner: Callable[[list[str], Path], subprocess.CompletedProcess[str]],
 ) -> tuple[ToolRun, tuple[Issue, ...]]:
     if not binary_path.is_file():
         location = binary_path.relative_to(project_path)
@@ -188,7 +217,7 @@ def _execute(
         return ToolRun(scanned=False, reason=reason, target=target), ()
 
     try:
-        result = _run(args, project_path)
+        result = runner(args, project_path)
     except (OSError, subprocess.TimeoutExpired) as e:
         reason = f"could not run {binary_label}: {e}"
         return ToolRun(scanned=False, reason=reason, target=target), ()
@@ -225,6 +254,7 @@ def _run_phpcs(project_path: Path) -> tuple[ToolRun, tuple[Issue, ...]]:
         project_path=project_path,
         target=target,
         parse=_parse_phpcs_report,
+        runner=_run,
     )
 
 
@@ -249,6 +279,7 @@ def _run_phpstan(project_path: Path) -> tuple[ToolRun, tuple[Issue, ...]]:
         project_path=project_path,
         target=config.name,
         parse=_parse_phpstan_report,
+        runner=_run,
     )
 
 
@@ -276,7 +307,55 @@ def _run_rector(project_path: Path) -> tuple[ToolRun, tuple[Issue, ...]]:
         project_path=project_path,
         target=config.name,
         parse=_parse_rector_report,
+        runner=_run,
     )
+
+
+def _discover_vendor_modules(project_path: Path) -> list[Path] | None:
+    """Third-party (non-`magento/*`) `magento2-module` packages actually
+    present under `vendor/`. Returns None when composer.lock/composer.json
+    couldn't be read at all (can't determine the target list — different
+    from a project that has them but legitimately has no such packages)."""
+    try:
+        project = _load_project(project_path)
+    except ProjectError:
+        return None
+
+    targets = []
+    for package in project.packages:
+        if package.type != "magento2-module" or package.name.startswith("magento/"):
+            continue
+        package_dir = project_path / "vendor" / package.name
+        if package_dir.is_dir():
+            targets.append(package_dir)
+    return targets
+
+
+def _run_vendor_phpcs(project_path: Path) -> tuple[ToolRun, tuple[Path, ...], tuple[Issue, ...]]:
+    targets = _discover_vendor_modules(project_path)
+    if targets is None:
+        reason = (
+            "no composer.json/composer.lock — can't determine third-party vendor/ Magento modules"
+        )
+        return ToolRun(scanned=False, reason=reason, target=""), (), ()
+    if not targets:
+        return ToolRun(scanned=True, reason=None, target="vendor"), (), ()
+
+    phpcs_path = project_path / "vendor" / "bin" / "phpcs"
+    target_desc = f"vendor ({len(targets)} third-party magento2-module package(s))"
+    run, issues = _execute(
+        binary_path=phpcs_path,
+        binary_label="phpcs",
+        install_hint="composer require --dev magento/magento-coding-standard",
+        # Bare --standard=Magento2, never the project's own phpcs.xml — that
+        # ruleset is tuned for the project's own code, not a vendor's.
+        args=[str(phpcs_path), "--report=json", f"--standard={STANDARD}", *map(str, targets)],
+        project_path=project_path,
+        target=target_desc,
+        parse=functools.partial(_parse_phpcs_report, scope="vendor"),
+        runner=_run_vendor,
+    )
+    return run, tuple(targets), issues
 
 
 def _cap(issues: tuple[Issue, ...]) -> tuple[Issue, ...]:
@@ -290,14 +369,21 @@ def scan(project_path: Path) -> ModuleRiskResult:
     phpcs_run, phpcs_issues = _run_phpcs(project_path)
     phpstan_run, phpstan_issues = _run_phpstan(project_path)
     rector_run, rector_issues = _run_rector(project_path)
+    vendor_phpcs_run, vendor_packages, vendor_phpcs_issues = _run_vendor_phpcs(project_path)
 
-    issue_count = len(phpcs_issues) + len(phpstan_issues) + len(rector_issues)
-    issues = _cap(phpcs_issues) + _cap(phpstan_issues) + _cap(rector_issues)
+    issue_count = (
+        len(phpcs_issues) + len(phpstan_issues) + len(rector_issues) + len(vendor_phpcs_issues)
+    )
+    issues = (
+        _cap(phpcs_issues) + _cap(phpstan_issues) + _cap(rector_issues) + _cap(vendor_phpcs_issues)
+    )
 
     return ModuleRiskResult(
         phpcs=phpcs_run,
         phpstan=phpstan_run,
         rector=rector_run,
+        vendor_phpcs=vendor_phpcs_run,
+        vendor_packages=tuple(str(p.relative_to(project_path)) for p in vendor_packages),
         issue_count=issue_count,
         issues=issues,
     )
