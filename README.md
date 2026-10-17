@@ -1,6 +1,10 @@
 # mcp-magento-audit
 
 [![CI](https://github.com/michalper/mcp-magento-audit/actions/workflows/ci.yml/badge.svg)](https://github.com/michalper/mcp-magento-audit/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](pyproject.toml)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Last commit](https://img.shields.io/github/last-commit/michalper/mcp-magento-audit)](https://github.com/michalper/mcp-magento-audit/commits/master)
 
 An [MCP](https://modelcontextprotocol.io) server giving an AI agent tools to assess a
 Magento 2 / Adobe Commerce project along three axes: **compatibility with a target PHP
@@ -51,6 +55,32 @@ python3.12 -m venv .venv
   }
 }
 ```
+
+## Example
+
+An agent calling `upgrade_plan` against a store that has one abandoned, PHP-7-only
+package and no `phpstan.neon` of its own (trimmed — the real result also includes
+`release_notes`, and the full `update_check`/`module_risk` results each blocker was
+derived from):
+
+```json
+{
+  "ready": false,
+  "unverified": [
+    "phpstan: no phpstan.neon(.dist) in project — skipping static analysis"
+  ],
+  "blockers": [
+    {
+      "source": "composer",
+      "description": "legacy/module",
+      "detail": "^7.4 does not cover PHP 8.3"
+    }
+  ]
+}
+```
+
+`ready` is false because of a real blocker, not a guess; `unverified` says phpstan never
+ran at all, so a clean result elsewhere isn't mistaken for "everything was checked".
 
 ## Tools
 

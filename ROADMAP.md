@@ -10,10 +10,10 @@ All five planned tools (`project_status`, `check_updates`, `module_risk`,
 
 ## Housekeeping
 
-- [ ] Polish the README further: badges (license, Python version), maybe a short usage
-      example/transcript of an agent calling a tool.
-- [ ] Add `CONTRIBUTING.md` (none yet — `LICENSE` already exists, MIT).
-- [ ] Add `SECURITY.md` (how to report a vulnerability).
+- [x] Polish the README further: badges (license, Python version, ruff, last commit) and
+      a trimmed `upgrade_plan` example transcript.
+- [x] Add `CONTRIBUTING.md`.
+- [x] Add `SECURITY.md`.
 - [x] Test coverage measurement (`pytest-cov`) — wired into `pyproject.toml` and CI.
 - [x] Security linter (`bandit`) — wired into `pyproject.toml` and CI, reviewed findings
       annotated with `# nosec`.
