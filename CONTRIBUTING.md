@@ -46,6 +46,21 @@ template: a pure-logic module with its own dataclasses, wired into a thin `@serv
 function that only maps `ProjectError` → `{"error": ...}`). Keep domain logic out of
 `server.py` — it should only resolve/validate the path and call into the module.
 
+## Releasing a new version
+
+`scripts/bump_version.py` updates the version in `pyproject.toml` and `server.json` (three
+fields across two files, previously kept in sync by hand) — it only edits files, it doesn't
+tag, push, or publish:
+
+```bash
+.venv/bin/python scripts/bump_version.py patch   # or minor / major / an explicit X.Y.Z
+git add pyproject.toml server.json
+git commit -m "Bump to <version>"
+git tag v<version> && git push origin master v<version>
+gh release create v<version> --generate-notes    # triggers PyPI publish via CI (Trusted Publishing)
+mcp-publisher publish                            # re-publish server.json to the MCP Registry
+```
+
 ## Reporting issues
 
 Open a GitHub issue with what you expected, what happened instead, and enough to reproduce

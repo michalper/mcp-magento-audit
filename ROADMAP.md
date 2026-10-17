@@ -111,8 +111,10 @@ All eight planned tools (`project_status`, `check_updates`, `module_risk`,
 - [x] Published to PyPI as `mcp-magento-audit` (0.1.1) and registered on the official MCP
       Registry (`registry.modelcontextprotocol.io`, `io.github.michalper/mcp-magento-audit`,
       status `active`).
-- [ ] `server.json`/`pyproject.toml` version bump process for future releases — not yet
-      scripted, done by hand so far.
+- [x] `scripts/bump_version.py` updates the version in `pyproject.toml` and
+      `server.json` (3 fields across 2 files) together — only edits files,
+      doesn't tag/push/publish, those stay deliberate manual steps (see
+      `CONTRIBUTING.md`).
 
 ## Housekeeping
 
