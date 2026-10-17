@@ -7,9 +7,29 @@ remember something between calls can reuse it.
 from __future__ import annotations
 
 import json
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+_locks: dict[Path, threading.Lock] = {}
+_locks_guard = threading.Lock()
+
+
+def lock_for(path: Path) -> threading.Lock:
+    """One lock per cache file path, shared by every caller in this process.
+
+    `read()`+`write()` is a read-modify-write over the *whole* file, not a
+    single key — two threads racing it (e.g. `fleet_overview` auditing
+    several projects that share a target Magento version concurrently) can
+    silently lose one side's update. Callers must wrap their whole
+    read-check-fetch-write cycle in `with cache.lock_for(path):`, not just
+    the write call, since the write isn't what needs protecting."""
+    resolved = path.resolve()
+    with _locks_guard:
+        if resolved not in _locks:
+            _locks[resolved] = threading.Lock()
+        return _locks[resolved]
 
 
 def read(path: Path) -> dict[str, Any]:

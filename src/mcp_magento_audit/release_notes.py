@@ -66,25 +66,26 @@ def _from_entry(entry: dict[str, Any], source: str) -> ReleaseNotes:
 
 
 def release_notes_for_version(version: str) -> ReleaseNotes:
-    store = cache.read(CACHE_PATH)
-    entry = store.get(version)
+    with cache.lock_for(CACHE_PATH):
+        store = cache.read(CACHE_PATH)
+        entry = store.get(version)
 
-    if entry and cache.is_fresh(entry, CACHE_TTL):
-        return _from_entry(entry, "cache")
+        if entry and cache.is_fresh(entry, CACHE_TTL):
+            return _from_entry(entry, "cache")
 
-    data = _fetch_from_github(version)
-    if data is not None:
-        payload = {
-            "url": data.get("html_url"),
-            "published_at": data.get("published_at"),
-            "notes": data.get("body"),
-        }
-        store[version] = {**payload, **cache.stamp()}
-        cache.write(CACHE_PATH, store)
-        return _from_entry(store[version], "live")
+        data = _fetch_from_github(version)
+        if data is not None:
+            payload = {
+                "url": data.get("html_url"),
+                "published_at": data.get("published_at"),
+                "notes": data.get("body"),
+            }
+            store[version] = {**payload, **cache.stamp()}
+            cache.write(CACHE_PATH, store)
+            return _from_entry(store[version], "live")
 
-    if entry:
-        return _from_entry(entry, "cache")
+        if entry:
+            return _from_entry(entry, "cache")
 
     return ReleaseNotes(
         found=False,

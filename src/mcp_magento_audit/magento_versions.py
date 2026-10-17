@@ -55,20 +55,21 @@ def _fetch_php_requirement(version: str) -> str | None:
 
 
 def php_requirement_for_magento(version: str) -> PhpRequirement:
-    store = cache.read(CACHE_PATH)
-    entry = store.get(version)
+    with cache.lock_for(CACHE_PATH):
+        store = cache.read(CACHE_PATH)
+        entry = store.get(version)
 
-    if entry and cache.is_fresh(entry, CACHE_TTL):
-        return PhpRequirement(php_requirement=entry.get("php_requirement"), source="cache")
+        if entry and cache.is_fresh(entry, CACHE_TTL):
+            return PhpRequirement(php_requirement=entry.get("php_requirement"), source="cache")
 
-    fetched = _fetch_php_requirement(version)
-    if fetched is not None:
-        store[version] = {"php_requirement": fetched, **cache.stamp()}
-        cache.write(CACHE_PATH, store)
-        return PhpRequirement(php_requirement=fetched, source="live")
+        fetched = _fetch_php_requirement(version)
+        if fetched is not None:
+            store[version] = {"php_requirement": fetched, **cache.stamp()}
+            cache.write(CACHE_PATH, store)
+            return PhpRequirement(php_requirement=fetched, source="live")
 
-    if entry:
-        return PhpRequirement(php_requirement=entry.get("php_requirement"), source="cache")
+        if entry:
+            return PhpRequirement(php_requirement=entry.get("php_requirement"), source="cache")
 
     if version in PHP_TABLE:
         return PhpRequirement(php_requirement=PHP_TABLE[version], source="hardcoded")
