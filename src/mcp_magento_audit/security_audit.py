@@ -19,15 +19,14 @@ dependency declared in the project (it's the tool that installed
 
 from __future__ import annotations
 
-import json
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from ._process import extract_json as _extract_json
-from ._process import find_composer as _find_composer
 from ._process import run as _run_process
+from ._process import run_composer_json as _run_composer_json
 
 TIMEOUT_SECONDS = 120
 MAX_STORED_ADVISORIES = 50
@@ -81,25 +80,15 @@ def audit(project_path: Path) -> SecurityAuditResult:
     if not (project_path / "composer.lock").is_file():
         return _empty("no composer.lock in project — nothing to audit")
 
-    composer_path = _find_composer(project_path)
-    if composer_path is None:
-        reason = (
-            "composer not found on PATH and no composer.phar in project — "
-            "install it: https://getcomposer.org/download/"
-        )
-        return _empty(reason)
-
-    args = [str(composer_path), "audit", "--format=json", "--no-interaction"]
-    try:
-        result = _run(args, project_path)
-    except (OSError, subprocess.TimeoutExpired) as e:
-        return _empty(f"could not run composer audit: {e}")
-
-    try:
-        advisories = _parse_report(result.stdout)
-    except (json.JSONDecodeError, AttributeError):
-        detail = result.stderr.strip() or result.stdout.strip()
-        return _empty(f"composer audit did not return a valid report: {detail}")
+    advisories, reason = _run_composer_json(
+        project_path,
+        subcommand="audit",
+        extra_args=["--format=json", "--no-interaction"],
+        runner=_run,
+        parse=_parse_report,
+    )
+    if reason is not None or advisories is None:
+        return _empty(reason or "composer audit did not return a valid report")
 
     # `advisory_count` is the true total; `advisories` itself is capped so a
     # project with a long-neglected vendor/ can't blow up the result size

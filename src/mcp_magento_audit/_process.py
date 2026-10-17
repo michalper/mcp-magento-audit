@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,41 @@ def find_composer(project_path: Path) -> Path | None:
         return phar
     on_path = shutil.which("composer")
     return Path(on_path) if on_path else None
+
+
+def run_composer_json[T](
+    project_path: Path,
+    *,
+    subcommand: str,
+    extra_args: list[str],
+    runner: Callable[[list[str], Path], subprocess.CompletedProcess[str]],
+    parse: Callable[[str], T],
+) -> tuple[T | None, str | None]:
+    """Resolves `composer`, runs `subcommand` with `extra_args`, and parses
+    its stdout as a JSON report via `parse`. Returns `(parsed, None)` on
+    success or `(None, reason)` on any failure (composer not found, the
+    subprocess itself failing to run, or an invalid report) — shared by
+    `security_audit.audit` and `outdated_packages.check`, whose only real
+    difference is the subcommand, the parse function, and the result
+    dataclass's field names."""
+    composer_path = find_composer(project_path)
+    if composer_path is None:
+        return None, (
+            "composer not found on PATH and no composer.phar in project — "
+            "install it: https://getcomposer.org/download/"
+        )
+
+    args = [str(composer_path), subcommand, *extra_args]
+    try:
+        result = runner(args, project_path)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return None, f"could not run composer {subcommand}: {e}"
+
+    try:
+        return parse(result.stdout), None
+    except (json.JSONDecodeError, AttributeError):
+        detail = result.stderr.strip() or result.stdout.strip()
+        return None, f"composer {subcommand} did not return a valid report: {detail}"
 
 
 def extract_json(text: str) -> Any:

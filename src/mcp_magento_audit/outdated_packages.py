@@ -17,15 +17,14 @@ docstring for why `composer` itself isn't resolved from `vendor/bin/`.
 
 from __future__ import annotations
 
-import json
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from ._process import extract_json as _extract_json
-from ._process import find_composer as _find_composer
 from ._process import run as _run_process
+from ._process import run_composer_json as _run_composer_json
 
 TIMEOUT_SECONDS = 120
 MAX_STORED_PACKAGES = 50
@@ -72,27 +71,17 @@ def check(project_path: Path) -> OutdatedPackagesResult:
     if not (project_path / "composer.lock").is_file():
         return _empty("no composer.lock in project — nothing to check")
 
-    composer_path = _find_composer(project_path)
-    if composer_path is None:
-        reason = (
-            "composer not found on PATH and no composer.phar in project — "
-            "install it: https://getcomposer.org/download/"
-        )
-        return _empty(reason)
-
     # No --all: composer already excludes up-to-date packages from this
     # output, which is exactly the filtering this tool wants.
-    args = [str(composer_path), "outdated", "--format=json", "--no-interaction"]
-    try:
-        result = _run(args, project_path)
-    except (OSError, subprocess.TimeoutExpired) as e:
-        return _empty(f"could not run composer outdated: {e}")
-
-    try:
-        packages = _parse_report(result.stdout)
-    except (json.JSONDecodeError, AttributeError):
-        detail = result.stderr.strip() or result.stdout.strip()
-        return _empty(f"composer outdated did not return a valid report: {detail}")
+    packages, reason = _run_composer_json(
+        project_path,
+        subcommand="outdated",
+        extra_args=["--format=json", "--no-interaction"],
+        runner=_run,
+        parse=_parse_report,
+    )
+    if reason is not None or packages is None:
+        return _empty(reason or "composer outdated did not return a valid report")
 
     # `outdated_count` is the true total; `packages` itself is capped so a
     # long-neglected project can't blow up the result size while still
