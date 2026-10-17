@@ -24,6 +24,8 @@ def test_check_against_target_php(monkeypatch):
     assert result.project_magento_version == "2.4.7"
     assert result.php_data_source == "hardcoded"
     assert result.target_magento_php_requirement == "~8.1.0||~8.2.0||~8.3.0"
+    assert result.code_compatibility.checked is True
+    assert result.code_compatibility.changed_file_count == 0
 
 
 def test_package_without_php_requirement_is_ok(monkeypatch):

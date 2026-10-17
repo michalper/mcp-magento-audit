@@ -1,4 +1,12 @@
-"""Check each package in a project against a target PHP/Magento version."""
+"""Check a project against a target PHP/Magento version.
+
+Two independent signals, deliberately not merged into one score: a
+per-package verdict from declared `require.php` constraints in
+`composer.lock` (`PackageVerdict`), and a `code_compatibility` check of the
+project's own code via a Rector dry-run (`php_compatibility.check`) — the
+declared constraint is frequently just `"*"` in practice, so it alone would
+give a false sense of readiness.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +15,8 @@ from dataclasses import dataclass
 from .composer import Project
 from .composer_semver import ConstraintError, satisfies
 from .magento_versions import php_requirement_for_magento
+from .php_compatibility import PhpCompatibilityResult
+from .php_compatibility import check as check_php_compatibility
 
 
 @dataclass(frozen=True)
@@ -26,6 +36,7 @@ class UpdateCheck:
     php_data_source: str
     packages: tuple[PackageVerdict, ...]
     summary: dict[str, int]
+    code_compatibility: PhpCompatibilityResult
 
 
 def _verdict_for_package(php_requirement: str | None, target_php: str) -> tuple[str, str]:
@@ -59,6 +70,8 @@ def check(project: Project, target_php: str, target_magento: str) -> UpdateCheck
     for v in verdicts:
         summary[v.verdict] += 1
 
+    code_compatibility = check_php_compatibility(project.path, target_php)
+
     return UpdateCheck(
         project_magento_version=project.magento_version,
         target_magento=target_magento,
@@ -67,4 +80,5 @@ def check(project: Project, target_php: str, target_magento: str) -> UpdateCheck
         php_data_source=magento_php.source,
         packages=tuple(verdicts),
         summary=summary,
+        code_compatibility=code_compatibility,
     )

@@ -29,6 +29,7 @@ def test_check_updates_full_result(monkeypatch):
     verdicts = {p["package"]: p["verdict"] for p in result["packages"]}
     assert verdicts["magento/product-community-edition"] == "ok"
     assert verdicts["stary/modul"] == "blocks"
+    assert result["code_compatibility"]["checked"] is True
 
 
 def test_check_updates_invalid_path_returns_error_not_exception():
