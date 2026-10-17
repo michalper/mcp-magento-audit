@@ -6,6 +6,7 @@ NOTE: in SDK `mcp` 2.x the class is called MCPServer (it was FastMCP in 1.x).
 from __future__ import annotations
 
 from dataclasses import asdict
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -20,8 +21,14 @@ from .security_audit import audit as audit_security
 from .updates import check
 from .upgrade_plan import build as build_upgrade_plan
 
+try:
+    _VERSION = version("mcp-magento-audit")
+except PackageNotFoundError:
+    _VERSION = ""
+
 server = MCPServer(
     name="mcp-magento-audit",
+    version=_VERSION,
     instructions=(
         "Magento project audit: compatibility with a target PHP/Magento version, "
         "quality of custom modules, dependency security. "
