@@ -101,6 +101,18 @@ OBJECT_MANAGER_PATTERN = re.compile(r"\bObjectManager\s*::\s*getInstance\s*\(")
 OBJECT_MANAGER_FILE_EXTENSIONS = (".php", ".phtml")
 CLASS_DECLARATION_PATTERN = re.compile(r"\b(?:class|interface|trait)\s+(\w+)")
 NAMESPACE_DECLARATION_PATTERN = re.compile(r"^\s*namespace\s+([\w\\]+)\s*;", re.MULTILINE)
+# "extends"/"implements" immediately after "class" is PHP anonymous-class
+# syntax (`new class extends Foo`), not a named declaration — both are
+# reserved words, so neither can ever be a real class/interface/trait name.
+NOT_A_CLASS_NAME = frozenset({"extends", "implements"})
+COMMENT_OR_STRING_PATTERN = re.compile(
+    r"//[^\n]*"
+    r"|#[^\n]*"
+    r"|/\*.*?\*/"
+    r"|'(?:\\.|[^'\\])*'"
+    r'|"(?:\\.|[^"\\])*"',
+    re.DOTALL,
+)
 
 
 @dataclass(frozen=True)
@@ -451,13 +463,18 @@ def _scan_object_manager_misuse(project_path: Path) -> tuple[ToolRun, tuple[Issu
 def _declared_classes(file_path: Path) -> list[tuple[str, str]]:
     """Returns (fqcn, class_name) pairs declared in a PHP file — one
     namespace per file is assumed (Magento's own PSR-4 convention), applied
-    to every class/interface/trait keyword found in it."""
-    text = file_path.read_text(encoding="utf-8", errors="replace")
+    to every class/interface/trait keyword found in it. Comments and string
+    literals are blanked out first so text like `// see class Foo` or a
+    `"...class Foo..."` string doesn't get mistaken for a real declaration."""
+    raw_text = file_path.read_text(encoding="utf-8", errors="replace")
+    text = COMMENT_OR_STRING_PATTERN.sub(" ", raw_text)
     namespace_match = NAMESPACE_DECLARATION_PATTERN.search(text)
     namespace = namespace_match.group(1) if namespace_match else ""
     declared = []
     for match in CLASS_DECLARATION_PATTERN.finditer(text):
         name = match.group(1)
+        if name in NOT_A_CLASS_NAME:
+            continue
         fqcn = f"{namespace}\\{name}" if namespace else name
         declared.append((fqcn, name))
     return declared

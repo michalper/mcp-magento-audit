@@ -687,6 +687,52 @@ def test_core_overrides_ignores_same_class_name_in_different_namespace(tmp_path)
     assert overrides == []
 
 
+def test_core_overrides_ignores_anonymous_class_syntax(tmp_path):
+    # `new class extends Foo` is PHP anonymous-class syntax: "extends" is not
+    # a class name, even though the naive "class <word>" pattern would catch
+    # it as one.
+    vendor_dir = tmp_path / "vendor" / "magento" / "module-catalog" / "Model"
+    vendor_dir.mkdir(parents=True)
+    (vendor_dir / "Extends.php").write_text(
+        "<?php\nnamespace Magento\\Catalog\\Model;\nclass Extends_ {}\n"
+    )
+
+    app_dir = tmp_path / "app" / "code" / "Magento" / "Catalog" / "Model"
+    app_dir.mkdir(parents=True)
+    (app_dir / "Anonymous.php").write_text(
+        "<?php\nnamespace Magento\\Catalog\\Model;\n"
+        "function build() {\n"
+        "    return new class extends \\Magento\\Framework\\DataObject {};\n"
+        "}\n"
+    )
+
+    result = mr.scan(tmp_path)
+
+    overrides = [i for i in result.issues if i.tool == "core_override"]
+    assert overrides == []
+
+
+def test_core_overrides_ignores_class_mentioned_only_in_a_comment(tmp_path):
+    vendor_dir = tmp_path / "vendor" / "magento" / "module-catalog" / "Model"
+    vendor_dir.mkdir(parents=True)
+    (vendor_dir / "Product.php").write_text(
+        "<?php\nnamespace Magento\\Catalog\\Model;\nclass Product {}\n"
+    )
+
+    app_dir = tmp_path / "app" / "code" / "Magento" / "Catalog" / "Model"
+    app_dir.mkdir(parents=True)
+    (app_dir / "Helper.php").write_text(
+        "<?php\nnamespace Magento\\Catalog\\Model;\n"
+        "// legacy shim, see class Product for the original\n"
+        "class Helper {}\n"
+    )
+
+    result = mr.scan(tmp_path)
+
+    overrides = [i for i in result.issues if i.tool == "core_override"]
+    assert overrides == []
+
+
 def test_core_override_is_a_blocker_in_upgrade_plan_shape(tmp_path):
     """core_override issues are severity=error + scope=app_code — the same
     shape upgrade_plan._quality_blockers already treats as a blocker, unlike
