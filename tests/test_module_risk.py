@@ -94,6 +94,34 @@ def test_project_with_own_phpcs_config_is_used_as_is(tmp_path, monkeypatch):
     assert result.phpcs.target == "phpcs.xml.dist"
 
 
+def test_phpcs_report_with_leading_deprecation_noise_still_parses(tmp_path, monkeypatch):
+    """Real-world regression: phpcs prints "DEPRECATED: Scanning CSS/JS
+    files..." notices on stdout *before* the JSON report when a project's
+    own ruleset still has CSS sniffs enabled (confirmed against a real
+    magento-coding-standard run) — must not be mistaken for an invalid
+    report."""
+    (tmp_path / "phpcs.xml.dist").write_text("<ruleset><rule ref='Magento2'/></ruleset>")
+    _touch_binary(tmp_path, "vendor/bin/phpcs")
+
+    def fake_run(args, cwd):
+        if "phpstan" in args[0]:
+            return subprocess.CompletedProcess(args, 0, stdout=_report({}), stderr="")
+        file_path = tmp_path / "Model" / "Thing.php"
+        messages = [{"message": "real issue", "type": "ERROR", "line": 5}]
+        noise = "DEPRECATED: Scanning CSS/JS files is deprecated.\nThe Magento2.Less.X sniff...\n"
+        return subprocess.CompletedProcess(
+            args, 2, stdout=noise + _report({str(file_path): {"messages": messages}}), stderr=""
+        )
+
+    monkeypatch.setattr(mr, "_run", fake_run)
+
+    result = mr.scan(tmp_path)
+
+    assert result.phpcs.scanned is True
+    phpcs_issues = [i for i in result.issues if i.tool == "phpcs"]
+    assert any(i.message == "real issue" for i in phpcs_issues)
+
+
 def test_invalid_phpcs_output_is_not_scanned(tmp_path, monkeypatch):
     (tmp_path / "app" / "code").mkdir(parents=True)
     _touch_binary(tmp_path, "vendor/bin/phpcs")
@@ -171,6 +199,7 @@ def test_phpstan_with_own_config_reports_issues(tmp_path, monkeypatch):
     result = mr.scan(tmp_path)
 
     assert "analyse" in captured["args"]
+    assert f"--memory-limit={mr.PHPSTAN_MEMORY_LIMIT}" in captured["args"]
     assert result.phpstan.scanned is True
     assert result.phpstan.target == "phpstan.neon"
     phpstan_issues = [i for i in result.issues if i.tool == "phpstan"]

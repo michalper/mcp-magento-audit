@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ._process import extract_json as _extract_json
 from ._process import run as _run_process
 
 TIMEOUT_SECONDS = 180
@@ -99,7 +100,7 @@ def _write_config(config_path: Path, target_dir: Path, php_set_flag: str) -> Non
 
 
 def _parse_report(stdout: str) -> tuple[tuple[str, ...], tuple[PhpCompatibilityChange, ...]]:
-    report: Any = json.loads(stdout)
+    report: Any = _extract_json(stdout)
 
     # The authoritative, complete list of changed files — Rector always
     # populates this for every file it touched, regardless of whether a

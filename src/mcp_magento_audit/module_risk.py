@@ -33,12 +33,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ._process import extract_json as _extract_json
 from ._process import run as _run_process
 
 STANDARD = "Magento2"
 FALLBACK_TARGET = "app/code"
 TIMEOUT_SECONDS = 120
 MAX_STORED_ISSUES_PER_TOOL = 50
+# phpstan's own default (128M) reliably crashes on a real Magento-scale
+# project reflecting the full framework (confirmed against a real module) -
+# the project's own dev docs already recommend 2G for exactly this reason.
+PHPSTAN_MEMORY_LIMIT = "2G"
 PHPCS_CONFIG_FILE_NAMES = ("phpcs.xml", "phpcs.xml.dist")
 PHPSTAN_CONFIG_FILE_NAMES = ("phpstan.neon", "phpstan.neon.dist", "phpstan.dist.neon")
 
@@ -88,7 +93,7 @@ def _find_config(project_path: Path, names: tuple[str, ...]) -> Path | None:
 
 
 def _parse_phpcs_report(stdout: str, project_path: Path) -> tuple[Issue, ...]:
-    report: Any = json.loads(stdout)
+    report: Any = _extract_json(stdout)
     issues: list[Issue] = []
     for file_path, file_report in (report.get("files") or {}).items():
         relative = _relative(file_path, project_path)
@@ -107,7 +112,7 @@ def _parse_phpcs_report(stdout: str, project_path: Path) -> tuple[Issue, ...]:
 
 
 def _parse_phpstan_report(stdout: str, project_path: Path) -> tuple[Issue, ...]:
-    report: Any = json.loads(stdout)
+    report: Any = _extract_json(stdout)
     issues: list[Issue] = []
     for file_path, file_report in (report.get("files") or {}).items():
         relative = _relative(file_path, project_path)
@@ -204,7 +209,13 @@ def _run_phpstan(project_path: Path) -> tuple[ToolRun, tuple[Issue, ...]]:
         binary_path=phpstan_path,
         binary_label="phpstan",
         install_hint="composer require --dev phpstan/phpstan",
-        args=[str(phpstan_path), "analyse", "--no-progress", "--error-format=json"],
+        args=[
+            str(phpstan_path),
+            "analyse",
+            "--no-progress",
+            "--error-format=json",
+            f"--memory-limit={PHPSTAN_MEMORY_LIMIT}",
+        ],
         project_path=project_path,
         target=config.name,
         parse=_parse_phpstan_report,
