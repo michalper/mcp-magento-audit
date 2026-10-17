@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/) (pre-1.0:
 a minor bump means new features, a patch means fixes only — no stability
 guarantee yet on the exact JSON shape of tool results).
 
+## [0.3.0] - 2026-10-17
+
+### Added
+- `module_risk`: `dangling_references` — a 7th check flagging `app/code`'s own
+  `di.xml` (`preference`/`plugin`), `events.xml` (`observer`), `crontab.xml` (`job`),
+  layout XML (`block`/`uiComponent`), `indexer.xml`, and `schema.graphqls`
+  (`@resolver`) naming a PHP class that doesn't resolve to any known class/interface
+  or `virtualType` — invisible to phpcs/phpstan/rector, since none of them analyze
+  XML. Verified empirically against a real Magento core checkout (~5100 references
+  checked, true noise rate ≈0%). `severity="warning"`, not an `upgrade_plan` blocker.
+- `MCP_MAGENTO_AUDIT_EXEC_PREFIX` env var wraps every subprocess call (phpcs/
+  phpstan/rector/composer) in a command that runs it inside a dev container instead
+  — e.g. `ddev exec --` or `docker compose exec -T app` — for projects whose
+  PHP/Composer only exist inside Docker/DDEV/Warden/Lando, not on the host this MCP
+  server runs on. Host-absolute paths are rewritten relative to the project root
+  first (relies on the usual bind-mount layout), and `composer` resolves against
+  the container's own `PATH` under a prefix. Verified against a real Docker
+  container, not just mocked.
+- `fetch_release_notes`'s GitHub API call now sends `Authorization: Bearer` when
+  `GITHUB_TOKEN`/`GH_TOKEN` is set, raising the unauthenticated 60/hour rate limit
+  to 5000/hour.
+
+### Fixed
+- Restored `docs/adr/0001-language-and-sdk.md`, accidentally deleted in an earlier
+  commit despite being referenced by README.md/CONTRIBUTING.md.
+
 ## [0.2.0] - 2026-10-17
 
 ### Added
