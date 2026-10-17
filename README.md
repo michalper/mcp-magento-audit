@@ -1,5 +1,7 @@
 # mcp-magento-audit
 
+[![CI](https://github.com/michalper/mcp-magento-audit/actions/workflows/ci.yml/badge.svg)](https://github.com/michalper/mcp-magento-audit/actions/workflows/ci.yml)
+
 Serwer [MCP](https://modelcontextprotocol.io) dający agentowi AI narzędzia do oceny
 projektu Magento 2 / Adobe Commerce w trzech osiach: **zgodność z docelową wersją
 PHP i Magento**, **jakość modułów autorskich** i **bezpieczeństwo zależności**.
