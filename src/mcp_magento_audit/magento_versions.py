@@ -11,9 +11,11 @@ import json
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
+
+from . import cache
 
 PHP_TABLE: dict[str, str] = {
     "2.4.7": "~8.1.0||~8.2.0||~8.3.0",
@@ -48,41 +50,17 @@ def _fetch_php_requirement(version: str) -> str | None:
     return (data.get("require") or {}).get("php")
 
 
-def _read_cache() -> dict[str, Any]:
-    try:
-        data: Any = json.loads(CACHE_PATH.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _write_cache(cache: dict[str, Any]) -> None:
-    CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CACHE_PATH.write_text(json.dumps(cache), encoding="utf-8")
-
-
-def _is_fresh(entry: dict[str, Any]) -> bool:
-    try:
-        fetched_at = datetime.fromisoformat(entry["fetched_at"])
-    except (KeyError, ValueError):
-        return False
-    return datetime.now(UTC) - fetched_at < CACHE_TTL
-
-
 def php_requirement_for_magento(version: str) -> PhpRequirement:
-    cache = _read_cache()
-    entry = cache.get(version)
+    store = cache.read(CACHE_PATH)
+    entry = store.get(version)
 
-    if entry and _is_fresh(entry):
+    if entry and cache.is_fresh(entry, CACHE_TTL):
         return PhpRequirement(php_requirement=entry.get("php_requirement"), source="cache")
 
     fetched = _fetch_php_requirement(version)
     if fetched is not None:
-        cache[version] = {
-            "php_requirement": fetched,
-            "fetched_at": datetime.now(UTC).isoformat(),
-        }
-        _write_cache(cache)
+        store[version] = {"php_requirement": fetched, **cache.stamp()}
+        cache.write(CACHE_PATH, store)
         return PhpRequirement(php_requirement=fetched, source="live")
 
     if entry:

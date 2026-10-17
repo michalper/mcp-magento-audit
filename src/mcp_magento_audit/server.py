@@ -6,11 +6,13 @@ NOTE: in SDK `mcp` 2.x the class is called MCPServer (it was FastMCP in 1.x).
 from __future__ import annotations
 
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
 from .composer import ProjectError, load_project
+from .module_risk import scan as scan_module_risk
 from .updates import check
 
 server = MCPServer(
@@ -66,6 +68,27 @@ def check_updates(path: str, target_php: str, target_magento: str) -> dict[str, 
     result = check(project, target_php=target_php, target_magento=target_magento)
 
     return asdict(result)
+
+
+@server.tool(
+    description=(
+        "Scans the given Magento project's custom code for coding-standard violations "
+        "and static-analysis issues by shelling out to the project's own vendor/bin/phpcs "
+        "and vendor/bin/phpstan. phpcs: if the project has its own phpcs.xml(.dist), that "
+        "configuration is used as-is; otherwise falls back to the Magento2 standard on "
+        "app/code. phpstan: only run if the project has its own phpstan.neon(.dist) — "
+        "unlike phpcs there is no safe generic fallback (no paths/level/extensions to "
+        "guess), so it is skipped rather than guessing. Each tool reports scanned=false "
+        "with a reason when it can't run, instead of staying silent."
+    )
+)
+def module_risk(path: str) -> dict[str, Any]:
+    """Scans the custom code of the project at `path` for rule violations."""
+    project_path = Path(path).expanduser().resolve()
+    if not project_path.is_dir():
+        return {"error": f"{project_path} is not a directory"}
+
+    return asdict(scan_module_risk(project_path))
 
 
 def main() -> None:

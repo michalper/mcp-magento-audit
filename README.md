@@ -10,7 +10,8 @@ Odpowiada na pytanie, które w agencjach Magento wraca bez końca:
 *„czy możemy podbić tego klienta na nowszą wersję, co to blokuje i od czego zacząć?"*
 
 > **Status: wczesny etap.** Projekt rozwijany po godzinach. Działają narzędzia
-> `project_status` i `check_updates`; reszta narzędzi jest w planie i jeszcze nie istnieje.
+> `project_status`, `check_updates` i `module_risk`; reszta narzędzi jest w planie i
+> jeszcze nie istnieje.
 
 ## Czym to się różni od `composer audit`
 
@@ -57,7 +58,7 @@ python3.12 -m venv .venv
 |---|---|---|
 | `project_status` | **działa** | wersja Magento, wymaganie PHP, liczba pakietów, pakiety porzucone |
 | `check_updates` | **działa** | werdykt per pakiet wobec docelowej wersji PHP i Magento |
-| `module_risk` | planowane | skan `app/code` pod kątem wycofanych API |
+| `module_risk` | **działa** | skan kodu przez `phpcs` (Magento2 coding standard) i `phpstan` projektu pod kątem wycofanych API i błędów typów |
 | `fetch_release_notes` | planowane | noty ze źródła producenta, **bez odpowiadania z pamięci modelu** |
 | `upgrade_plan` | planowane | uporządkowany plan z kolejnością i blokerami |
 
