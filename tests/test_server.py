@@ -3,6 +3,7 @@ from pathlib import Path
 from mcp_magento_audit.magento_versions import PhpRequirement
 from mcp_magento_audit.server import (
     check_updates,
+    fleet_overview,
     outdated_packages,
     project_status,
     security_audit,
@@ -61,3 +62,17 @@ def test_outdated_packages_without_composer_lock_is_not_scanned(tmp_path):
 
     assert result["scanned"] is False
     assert "composer.lock" in result["reason"]
+
+
+def test_fleet_overview_reports_each_project(monkeypatch):
+    requirement = PhpRequirement(php_requirement="~8.1.0||~8.2.0||~8.3.0", source="hardcoded")
+    monkeypatch.setattr(
+        "mcp_magento_audit.updates.php_requirement_for_magento", lambda version: requirement
+    )
+
+    result = fleet_overview([STORE, "/no/such/directory"], target_php="8.3", target_magento="2.4.7")
+
+    assert result["total"] == 2
+    assert result["loaded"] == 1
+    assert result["errored"] == 1
+    assert result["blocked"] == 1

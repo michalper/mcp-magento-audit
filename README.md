@@ -15,9 +15,10 @@ and Magento version**, **quality of custom modules**, and **dependency security*
 It answers the question that never stops coming up in Magento agencies:
 *"can we bump this client to a newer version, what's blocking it, and where do we start?"*
 
-> **Status: early stage.** Built on evenings/weekends. All seven planned tools
+> **Status: early stage.** Built on evenings/weekends. All eight planned tools
 > (`project_status`, `check_updates`, `module_risk`, `security_audit`, `outdated_packages`,
-> `fetch_release_notes`, `upgrade_plan`) are working. See `ROADMAP.md` for what's next.
+> `fetch_release_notes`, `upgrade_plan`, `fleet_overview`) are working. See `ROADMAP.md` for
+> what's next.
 
 ## How this differs from `composer audit`
 
@@ -34,7 +35,9 @@ Composer doesn't give you:
    project — fix this one first.* `upgrade_plan` does, folding `security_audit`'s
    advisories in alongside composer-constraint and code-quality blockers.
 3. **It doesn't aggregate across projects.** "Which of our twenty stores can be upgraded
-   today" requires stitching results together from many directories by hand.
+   today" requires stitching results together from many directories by hand. `fleet_overview`
+   runs the composer-constraint check across every project path given to it in one call —
+   a fast first pass, not a replacement for a full `upgrade_plan` per project.
 
 **What this server doesn't pretend to be:** there's no clean dataset of "module X works
 with Magento 2.4.8". Results are derived from declarations in `composer.json`, a code
@@ -99,6 +102,7 @@ ran at all, so a clean result elsewhere isn't mistaken for "everything was check
 | `outdated_packages` | **working** | every installed package checked against `composer outdated` for a newer available version — independent of known CVEs or target-version compatibility |
 | `fetch_release_notes` | **working** | release notes from `magento/magento2` GitHub Releases, **without answering from the model's memory** |
 | `upgrade_plan` | **working** | combines the other tools into a list of concrete blockers, with `ready=true` only once it's empty |
+| `fleet_overview` | **working** | triages many projects at once against a target PHP/Magento version ("which of these N stores can be upgraded today") via `check_updates` only — a fast first pass, not a replacement for `upgrade_plan` per project |
 
 ## Development
 

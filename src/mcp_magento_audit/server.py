@@ -12,6 +12,7 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 
 from .composer import ProjectError, load_project
+from .fleet import overview as build_fleet_overview
 from .module_risk import scan as scan_module_risk
 from .outdated_packages import check as check_outdated
 from .release_notes import release_notes_for_version
@@ -182,6 +183,25 @@ def upgrade_plan(path: str, target_php: str, target_magento: str) -> dict[str, A
         return {"error": str(e)}
 
     return asdict(build_upgrade_plan(project, target_php=target_php, target_magento=target_magento))
+
+
+@server.tool(
+    description=(
+        "Triages many Magento projects at once against a target PHP/Magento version — "
+        "'which of these N stores can be upgraded today'. Runs only check_updates per "
+        "project (composer-constraint verdicts, plus code_compatibility if the project has "
+        "its own rector.php) — deliberately not the full upgrade_plan, since module_risk's "
+        "phpcs/phpstan/rector and security_audit's/outdated_packages' composer calls are "
+        "each seconds-to-minutes and don't scale across a whole fleet in one call. A project "
+        "reported blocked=false here can still have module_risk/security_audit findings that "
+        "upgrade_plan would catch — call upgrade_plan per project afterward for the full "
+        "picture. A project that fails to load (bad path, missing composer files) is "
+        "reported with its own error instead of failing the whole batch."
+    )
+)
+def fleet_overview(paths: list[str], target_php: str, target_magento: str) -> dict[str, Any]:
+    """Triages the projects at `paths` against `target_php` and `target_magento`."""
+    return asdict(build_fleet_overview(paths, target_php=target_php, target_magento=target_magento))
 
 
 def main() -> None:

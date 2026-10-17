@@ -48,7 +48,10 @@ class UpgradePlan:
     outdated_packages: OutdatedPackagesResult
 
 
-def _composer_blockers(update_check: UpdateCheck) -> list[Blocker]:
+def composer_blockers(update_check: UpdateCheck) -> list[Blocker]:
+    """Public: also reused by `fleet.py` for its lightweight, per-project
+    triage (composer+code_compatibility only, no module_risk/security_audit
+    — those are too slow to run across a whole fleet of projects at once)."""
     return [
         Blocker(source="composer", description=v.package, detail=v.reason)
         for v in update_check.packages
@@ -56,7 +59,7 @@ def _composer_blockers(update_check: UpdateCheck) -> list[Blocker]:
     ]
 
 
-def _code_compatibility_blockers(update_check: UpdateCheck) -> list[Blocker]:
+def code_compatibility_blockers(update_check: UpdateCheck) -> list[Blocker]:
     compat = update_check.code_compatibility
 
     rules_by_file: dict[str, list[str]] = {}
@@ -136,8 +139,8 @@ def build(project: Project, target_php: str, target_magento: str) -> UpgradePlan
         outdated = outdated_future.result()
 
     blockers = [
-        *_composer_blockers(update_check),
-        *_code_compatibility_blockers(update_check),
+        *composer_blockers(update_check),
+        *code_compatibility_blockers(update_check),
         *_quality_blockers(risk),
         *_security_blockers(security),
     ]

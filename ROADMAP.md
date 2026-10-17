@@ -2,8 +2,9 @@
 
 ## Tools
 
-All seven planned tools (`project_status`, `check_updates`, `module_risk`,
-`security_audit`, `outdated_packages`, `fetch_release_notes`, `upgrade_plan`) are done.
+All eight planned tools (`project_status`, `check_updates`, `module_risk`,
+`security_audit`, `outdated_packages`, `fetch_release_notes`, `upgrade_plan`,
+`fleet_overview`) are done.
 
 - [x] Rector-based dead-code/quality checks in `module_risk` (the project's own
       `rector.php`, as-is — not the PHP-version compatibility check, which
@@ -24,11 +25,14 @@ All seven planned tools (`project_status`, `check_updates`, `module_risk`,
       newer version available — a staleness/tech-debt signal independent of
       CVEs (`security_audit`) and target-version compatibility
       (`check_updates`). Informational in `upgrade_plan`, not a blocker.
-- [ ] Multi-project aggregation: a tool that runs the existing per-project
-      checks across many project directories at once and aggregates the
-      results (e.g. "which of these N stores can be upgraded today") — the
-      third differentiator the README already advertises over plain
-      `composer audit`, but no tool implements it yet.
+- [x] `fleet_overview`: triages many project directories at once ("which of
+      these N stores can be upgraded today") — the third differentiator the
+      README advertises over plain `composer audit`. Deliberately lightweight
+      (only `check_updates` per project, not the full `upgrade_plan`):
+      module_risk's phpcs/phpstan/rector and security_audit's/
+      outdated_packages' composer calls are each seconds-to-minutes and
+      don't scale across a fleet in one call. A project that fails to load
+      is reported with its own error rather than failing the whole batch.
 - [ ] `module_risk`: surface Object Manager misuse explicitly — the Magento2
       phpcs standard already flags direct `ObjectManager::getInstance()` calls
       (sniff `Magento2.Classes.ObjectManager`) as part of the existing scan,
@@ -41,6 +45,21 @@ All seven planned tools (`project_status`, `check_updates`, `module_risk`,
       sniff — needs its own check cross-referencing class names declared in
       `app/code` against `vendor/magento/*`, as opposed to legitimate `di.xml`
       preferences/plugins, which don't duplicate the class itself.
+- [ ] `module_risk`: flag admin/customer controller actions missing
+      `_isAllowed()` (or an always-`true` stub) — not a phpcs sniff, needs
+      its own AST-ish check over `app/code`'s `Controller/Adminhtml` and
+      customer-area action classes. Deliberately not pursuing N+1-query
+      detection or "service contracts vs. direct collection access" —
+      those need real dataflow analysis, not AST/pattern matching, and would
+      be too false-positive-prone at the level this project operates.
+- [ ] `module_risk`: flag empty `catch (...) {}` blocks and discouraged debug
+      calls (`var_dump`/`print_r`/`echo`/`die` left in production code) —
+      cheap, low-noise AST checks.
+- [ ] `module_risk`: flag `module.xml` `<sequence>` entries missing for
+      modules a module's own code actually depends on (DI-injected classes,
+      referenced layout handles/blocks) — the classic Magento
+      load-order-dependent bug. Bigger lift: needs mapping class/layout
+      references back to the owning module.
 
 ## Distribution
 
