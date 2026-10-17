@@ -5,7 +5,7 @@ import pytest
 
 from mcp_magento_audit.composer import ProjectError, load_project
 
-STORE = Path(__file__).parent / "fixtures" / "sklep"
+STORE = Path(__file__).parent / "fixtures" / "store"
 
 
 def _write(tmp_path, composer_json, composer_lock):
@@ -25,11 +25,11 @@ def test_counts_packages_from_both_groups():
 
 def test_detects_abandoned_package():
     abandoned = [p.name for p in load_project(STORE).abandoned_packages]
-    assert abandoned == ["stary/modul"]
+    assert abandoned == ["legacy/module"]
 
 
 def test_php_requirement_of_specific_package():
-    package = next(p for p in load_project(STORE).packages if p.name == "stary/modul")
+    package = next(p for p in load_project(STORE).packages if p.name == "legacy/module")
     assert package.php_requirement == "^7.4"
 
 

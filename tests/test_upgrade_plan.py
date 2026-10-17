@@ -6,7 +6,7 @@ from mcp_magento_audit.magento_versions import PhpRequirement
 from mcp_magento_audit.release_notes import ReleaseNotes
 from mcp_magento_audit.upgrade_plan import build
 
-STORE = Path(__file__).parent / "fixtures" / "sklep"
+STORE = Path(__file__).parent / "fixtures" / "store"
 
 
 def _write_compatible_project(tmp_path):
@@ -52,7 +52,7 @@ def test_blocking_package_produces_a_blocker(monkeypatch):
 
     assert plan.ready is False
     composer_blockers = [b for b in plan.blockers if b.source == "composer"]
-    assert any(b.description == "stary/modul" for b in composer_blockers)
+    assert any(b.description == "legacy/module" for b in composer_blockers)
     assert plan.release_notes.found is True
 
 

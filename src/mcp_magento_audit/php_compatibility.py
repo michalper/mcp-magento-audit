@@ -63,7 +63,7 @@ def _php_set_flag(target_php: str) -> str | None:
 
 
 def _run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603
+    return subprocess.run(  # noqa: S603 # nosec B603 - fixed argv, no shell
         args, cwd=cwd, capture_output=True, text=True, timeout=TIMEOUT_SECONDS
     )
 

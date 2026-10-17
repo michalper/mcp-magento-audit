@@ -3,14 +3,14 @@ from pathlib import Path
 from mcp_magento_audit.magento_versions import PhpRequirement
 from mcp_magento_audit.server import check_updates, project_status
 
-STORE = str(Path(__file__).parent / "fixtures" / "sklep")
+STORE = str(Path(__file__).parent / "fixtures" / "store")
 
 
 def test_project_status_full_result():
     result = project_status(STORE)
     assert result["magento_version"] == "2.4.7"
     assert result["package_count"] == 3
-    assert result["abandoned"] == ["stary/modul"]
+    assert result["abandoned"] == ["legacy/module"]
 
 
 def test_invalid_path_returns_error_not_exception():
@@ -28,7 +28,7 @@ def test_check_updates_full_result(monkeypatch):
     assert result["php_data_source"] == "hardcoded"
     verdicts = {p["package"]: p["verdict"] for p in result["packages"]}
     assert verdicts["magento/product-community-edition"] == "ok"
-    assert verdicts["stary/modul"] == "blocks"
+    assert verdicts["legacy/module"] == "blocks"
     assert result["code_compatibility"]["checked"] is True
 
 

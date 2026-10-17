@@ -4,7 +4,7 @@ from mcp_magento_audit.composer import load_project
 from mcp_magento_audit.magento_versions import PhpRequirement
 from mcp_magento_audit.updates import check
 
-STORE = Path(__file__).parent / "fixtures" / "sklep"
+STORE = Path(__file__).parent / "fixtures" / "store"
 
 
 def test_check_against_target_php(monkeypatch):
@@ -18,7 +18,7 @@ def test_check_against_target_php(monkeypatch):
 
     verdicts = {v.package: v.verdict for v in result.packages}
     assert verdicts["magento/product-community-edition"] == "ok"
-    assert verdicts["stary/modul"] == "blocks"
+    assert verdicts["legacy/module"] == "blocks"
     assert verdicts["phpunit/phpunit"] == "ok"
     assert result.summary == {"ok": 2, "blocks": 1, "unknown": 0}
     assert result.project_magento_version == "2.4.7"

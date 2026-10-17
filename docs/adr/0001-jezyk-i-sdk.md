@@ -1,39 +1,41 @@
-# ADR 0001: Python i oficjalne SDK MCP
+# ADR 0001: Python and the official MCP SDK
 
-**Data:** 2026-10-15
-**Status:** przyjęty
+**Date:** 2026-10-15
+**Status:** accepted
 
-## Kontekst
+## Context
 
-Serwer MCP do audytu projektów Magento. Autor ma 14 lat w PHP i cztery miesiące
-w pełnym Symfony; Pythona uczy się od 2026-10-11. Do wyboru były PHP i Python.
+An MCP server for auditing Magento projects. The author has 14 years in PHP and
+four months of full-time Symfony; learning Python since 2026-10-11. The choice
+was between PHP and Python.
 
-## Decyzja
+## Decision
 
-**Python**, na oficjalnym SDK `mcp` (wersja 2.x).
+**Python**, on the official `mcp` SDK (version 2.x).
 
-## Uzasadnienie
+## Rationale
 
-- Jeden artefakt zamyka dwie luki w portfolio naraz: brak serwera MCP i brak
-  czegokolwiek publicznego w Pythonie. Python wraca jako wymaganie w ofertach
-  z obszaru AI engineering.
-- Python SDK jest w **Tier 1** oficjalnej klasyfikacji (razem z TypeScriptem, C#,
-  Go, Rustem i Ruby). PHP SDK jest w Tier 3 i przed wersją 1.0 — mniej przykładów,
-  mniej stabilne API.
-- Domena pozostaje Magento, więc artefakt pokazuje jednocześnie nowy język i wiedzę
-  dziedzinową z czterech lat pracy na platformie.
+- One artifact closes two portfolio gaps at once: no MCP server and nothing
+  public in Python. Python keeps coming up as a requirement in AI-engineering
+  job postings.
+- The Python SDK is **Tier 1** in the official classification (alongside
+  TypeScript, C#, Go, Rust and Ruby). The PHP SDK is Tier 3 and pre-1.0 — fewer
+  examples, a less stable API.
+- The domain stays Magento, so the artifact shows a new language and four years
+  of domain knowledge on the platform at the same time.
 
-## Konsekwencje
+## Consequences
 
-- Narzut na naukę: pierwsze etapy pójdą wolniej, niż poszłyby w PHP.
-- **Warunek twardy: autor musi rozumieć każdą linię tego kodu.** Projekt ma być
-  dowodem umiejętności na rozmowie kwalifikacyjnej, a nie wydrukiem z generatora.
-- `composer.lock` to zwykły JSON, więc brak PHP po stronie implementacji niczego
-  nie utrudnia.
+- Learning overhead: the first stages will go slower than they would in PHP.
+- **Hard requirement: the author must understand every line of this code.**
+  The project is meant to be proof of skill in a job interview, not a printout
+  from a generator.
+- `composer.lock` is plain JSON, so not having PHP on the implementation side
+  doesn't make anything harder.
 
-## Pułapka do zapamiętania
+## A trap worth remembering
 
-W SDK `mcp` 2.x klasa `FastMCP` została przemianowana na `MCPServer`
-(`from mcp.server.mcpserver import MCPServer`). Kod i przykłady z wersji 1.x
-nie zadziałają. API zostało sprawdzone w zainstalowanej wersji, a nie przyjęte
-z pamięci — to ta sama zasada, którą ten serwer ma egzekwować wobec modelu.
+In SDK `mcp` 2.x, the `FastMCP` class was renamed to `MCPServer`
+(`from mcp.server.mcpserver import MCPServer`). Code and examples from 1.x
+won't work. The API was checked against the installed version, not assumed
+from memory — the same principle this server is meant to enforce on the model.

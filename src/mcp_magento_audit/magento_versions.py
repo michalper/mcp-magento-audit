@@ -36,7 +36,7 @@ class PhpRequirement:
 
 
 def _fetch(url: str) -> str:
-    with urllib.request.urlopen(url, timeout=5) as response:  # noqa: S310
+    with urllib.request.urlopen(url, timeout=5) as response:  # noqa: S310 # nosec B310
         body: bytes = response.read()
         return body.decode("utf-8")
 
