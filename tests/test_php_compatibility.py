@@ -1,5 +1,6 @@
 import json
 import subprocess
+from pathlib import Path
 
 from mcp_magento_audit import php_compatibility as pc
 
@@ -9,6 +10,31 @@ def _touch_binary(project_path, relative):
     binary.parent.mkdir(parents=True, exist_ok=True)
     binary.touch()
     return binary
+
+
+def test_php_single_quoted_escapes_quotes_and_backslashes():
+    assert pc._php_single_quoted(r"o'brien\shop") == r"o\'brien\\shop"
+
+
+def test_config_with_apostrophe_in_path_escapes_it(tmp_path, monkeypatch):
+    project_path = tmp_path / "o'brien-shop"
+    (project_path / "app" / "code").mkdir(parents=True)
+    _touch_binary(project_path, "vendor/bin/rector")
+
+    captured: dict = {}
+
+    def fake_run(args, cwd):
+        config_arg = next(a for a in args if a.startswith("--config="))
+        captured["content"] = Path(config_arg.removeprefix("--config=")).read_text()
+        return subprocess.CompletedProcess(args, 0, stdout=json.dumps({"totals": {}}), stderr="")
+
+    monkeypatch.setattr(pc, "_run", fake_run)
+
+    result = pc.check(project_path, "8.3")
+
+    assert result.checked is True
+    assert "o\\'brien" in captured["content"]
+    assert "o'brien-shop/app/code'])" not in captured["content"]
 
 
 def test_no_app_code_is_trivially_checked(tmp_path):

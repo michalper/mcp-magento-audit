@@ -68,13 +68,19 @@ def _run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _php_single_quoted(value: str) -> str:
+    """Escapes a value for interpolation into a single-quoted PHP string literal."""
+    return value.replace("\\", "\\\\").replace("'", "\\'")
+
+
 def _write_config(config_path: Path, target_dir: Path, php_set_flag: str) -> None:
+    path_literal = _php_single_quoted(str(target_dir))
     config_path.write_text(
         "<?php\n"
         "declare(strict_types=1);\n"
         "use Rector\\Config\\RectorConfig;\n"
         "return RectorConfig::configure()\n"
-        f"    ->withPaths(['{target_dir}'])\n"
+        f"    ->withPaths(['{path_literal}'])\n"
         f"    ->withPhpSets({php_set_flag}: true);\n",
         encoding="utf-8",
     )
