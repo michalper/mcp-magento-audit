@@ -22,8 +22,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ._process import run as _run_process
+
 TIMEOUT_SECONDS = 180
-FALLBACK_TARGET = "app/code"
 
 # RectorConfigBuilder::withPhpSets()'s named-boolean parameters (php53..php86).
 SUPPORTED_TARGETS = (
@@ -46,26 +47,37 @@ class PhpCompatibilityResult:
     reason: str | None
     target_php: str
     changed_file_count: int
+    changed_files: tuple[str, ...]
     changes: tuple[PhpCompatibilityChange, ...]
 
 
 def _empty(checked: bool, reason: str | None, target_php: str) -> PhpCompatibilityResult:
     return PhpCompatibilityResult(
-        checked=checked, reason=reason, target_php=target_php, changed_file_count=0, changes=()
+        checked=checked,
+        reason=reason,
+        target_php=target_php,
+        changed_file_count=0,
+        changed_files=(),
+        changes=(),
     )
 
 
 def _php_set_flag(target_php: str) -> str | None:
-    normalized = target_php.strip()
-    if normalized not in SUPPORTED_TARGETS:
+    """Maps e.g. '8.3' or '8.3.1' to 'php83' — Rector's sets are per
+    major.minor, so a patch version (the documented, valid form of
+    `target_php` elsewhere, see composer_semver.satisfies) is truncated to
+    its first two components rather than rejected outright."""
+    parts = target_php.strip().split(".")
+    if len(parts) < 2 or not parts[0].isdigit() or not parts[1].isdigit():
         return None
-    return "php" + normalized.replace(".", "")
+    major_minor = f"{parts[0]}.{parts[1]}"
+    if major_minor not in SUPPORTED_TARGETS:
+        return None
+    return "php" + major_minor.replace(".", "")
 
 
 def _run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 # nosec B603 - fixed argv, no shell
-        args, cwd=cwd, capture_output=True, text=True, timeout=TIMEOUT_SECONDS
-    )
+    return _run_process(args, cwd, TIMEOUT_SECONDS)
 
 
 def _php_single_quoted(value: str) -> str:
@@ -86,8 +98,14 @@ def _write_config(config_path: Path, target_dir: Path, php_set_flag: str) -> Non
     )
 
 
-def _parse_report(stdout: str) -> tuple[PhpCompatibilityChange, ...]:
+def _parse_report(stdout: str) -> tuple[tuple[str, ...], tuple[PhpCompatibilityChange, ...]]:
     report: Any = json.loads(stdout)
+
+    # The authoritative, complete list of changed files — Rector always
+    # populates this for every file it touched, regardless of whether a
+    # per-line diff/changes breakdown is also available for it.
+    changed_files = tuple(str(f) for f in report.get("changed_files") or [])
+
     changes: list[PhpCompatibilityChange] = []
     for file_diff in report.get("file_diffs") or []:
         file_path = str(file_diff.get("file", ""))
@@ -95,11 +113,11 @@ def _parse_report(stdout: str) -> tuple[PhpCompatibilityChange, ...]:
             changes.append(
                 PhpCompatibilityChange(
                     file=file_path,
-                    line=int(change.get("line", 0)),
+                    line=int(change.get("line") or 0),
                     rector_rule=str(change.get("rector", "")),
                 )
             )
-    return tuple(changes)
+    return changed_files, tuple(changes)
 
 
 def check(project_path: Path, target_php: str) -> PhpCompatibilityResult:
@@ -120,35 +138,37 @@ def check(project_path: Path, target_php: str) -> PhpCompatibilityResult:
         )
         return _empty(checked=False, reason=reason, target_php=target_php)
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        config_path = Path(tmp_dir) / "rector.php"
-        _write_config(config_path, target_dir, php_set_flag)
+    try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "rector.php"
+            _write_config(config_path, target_dir, php_set_flag)
 
-        args = [
-            str(rector_path),
-            "process",
-            "--dry-run",
-            "--no-progress-bar",
-            "--output-format=json",
-            f"--config={config_path}",
-        ]
-        try:
+            args = [
+                str(rector_path),
+                "process",
+                "--dry-run",
+                "--no-progress-bar",
+                "--output-format=json",
+                f"--config={config_path}",
+            ]
             result = _run(args, project_path)
-        except (OSError, subprocess.TimeoutExpired) as e:
-            return _empty(checked=False, reason=f"could not run rector: {e}", target_php=target_php)
+    except OSError as e:
+        return _empty(checked=False, reason=f"could not run rector: {e}", target_php=target_php)
+    except subprocess.TimeoutExpired as e:
+        return _empty(checked=False, reason=f"could not run rector: {e}", target_php=target_php)
 
-        try:
-            changes = _parse_report(result.stdout)
-        except (json.JSONDecodeError, AttributeError):
-            detail = result.stderr.strip() or result.stdout.strip()
-            reason = f"rector did not return a valid report: {detail}"
-            return _empty(checked=False, reason=reason, target_php=target_php)
+    try:
+        changed_files, changes = _parse_report(result.stdout)
+    except (json.JSONDecodeError, AttributeError):
+        detail = result.stderr.strip() or result.stdout.strip()
+        reason = f"rector did not return a valid report: {detail}"
+        return _empty(checked=False, reason=reason, target_php=target_php)
 
-    changed_files = {change.file for change in changes}
     return PhpCompatibilityResult(
         checked=True,
         reason=None,
         target_php=target_php,
         changed_file_count=len(changed_files),
+        changed_files=changed_files,
         changes=changes,
     )

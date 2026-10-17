@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import timedelta
@@ -44,7 +45,8 @@ def _fetch(url: str) -> str:
 
 
 def _fetch_from_github(version: str) -> dict[str, Any] | None:
-    url = f"https://api.github.com/repos/magento/magento2/releases/tags/{version}"
+    safe_version = urllib.parse.quote(version, safe="")
+    url = f"https://api.github.com/repos/magento/magento2/releases/tags/{safe_version}"
     try:
         data: Any = json.loads(_fetch(url))
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):

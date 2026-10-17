@@ -69,3 +69,27 @@ def test_no_blockers_means_ready(tmp_path, monkeypatch):
     assert plan.ready is True
     assert plan.blockers == ()
     assert plan.release_notes.found is False
+    # No phpstan.neon in this fixture, so that signal never ran — ready=True
+    # must not be mistaken for "every signal was checked and came back clean".
+    assert any("phpstan" in u for u in plan.unverified)
+
+
+def test_ready_stays_true_but_unverified_lists_missing_tools(tmp_path, monkeypatch):
+    requirement = PhpRequirement(php_requirement="*", source="hardcoded")
+    monkeypatch.setattr(
+        "mcp_magento_audit.updates.php_requirement_for_magento", lambda version: requirement
+    )
+    _stub_release_notes(monkeypatch, found=False)
+
+    project_path = _write_compatible_project(tmp_path)
+    (project_path / "app" / "code").mkdir(parents=True)
+
+    project = load_project(project_path)
+    plan = build(project, target_php="8.3", target_magento="2.4.7")
+
+    assert plan.ready is True
+    assert plan.blockers == ()
+    joined = " ".join(plan.unverified)
+    assert "code_compatibility" in joined
+    assert "phpcs" in joined
+    assert "phpstan" in joined

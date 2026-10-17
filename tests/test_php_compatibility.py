@@ -49,6 +49,13 @@ def test_unsupported_php_version_is_not_checked(tmp_path):
     assert "9.9" in result.reason
 
 
+def test_patch_version_is_normalized_to_major_minor():
+    assert pc._php_set_flag("8.3.1") == "php83"
+    assert pc._php_set_flag("8.3") == "php83"
+    assert pc._php_set_flag("abc") is None
+    assert pc._php_set_flag("8") is None
+
+
 def test_missing_rector_binary_is_not_checked(tmp_path):
     (tmp_path / "app" / "code").mkdir(parents=True)
 
@@ -91,6 +98,29 @@ def test_reports_changes_from_dry_run(tmp_path, monkeypatch):
     assert result.changes[0].file == "app/code/Foo.php"
     assert result.changes[0].line == 3
     assert result.changes[0].rector_rule == "Rector\\Php80\\Rector\\Class_\\SomeRector"
+
+
+def test_file_without_line_level_changes_still_counts(tmp_path, monkeypatch):
+    """A file can be in top-level changed_files with no per-line 'changes'
+    breakdown in file_diffs (e.g. a rule with no line attribution) — it must
+    still be counted, not silently dropped."""
+    (tmp_path / "app" / "code").mkdir(parents=True)
+    _touch_binary(tmp_path, "vendor/bin/rector")
+
+    def fake_run(args, cwd):
+        report = {
+            "totals": {"changed_files": 1, "errors": 0},
+            "file_diffs": [{"file": "app/code/Foo.php", "diff": "...", "changes": []}],
+            "changed_files": ["app/code/Foo.php"],
+        }
+        return subprocess.CompletedProcess(args, 2, stdout=json.dumps(report), stderr="")
+
+    monkeypatch.setattr(pc, "_run", fake_run)
+
+    result = pc.check(tmp_path, "8.3")
+
+    assert result.changed_file_count == 1
+    assert result.changed_files == ("app/code/Foo.php",)
 
 
 def test_no_changes_reports_empty(tmp_path, monkeypatch):

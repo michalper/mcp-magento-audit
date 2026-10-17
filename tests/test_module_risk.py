@@ -224,6 +224,68 @@ def test_issues_are_capped_per_tool_but_issue_count_stays_true(tmp_path, monkeyp
     assert len(result.issues) == mr.MAX_STORED_ISSUES_PER_TOOL
 
 
+def test_cap_keeps_errors_over_warnings(tmp_path, monkeypatch):
+    (tmp_path / "phpcs.xml.dist").write_text("<ruleset><rule ref='Magento2'/></ruleset>")
+    _touch_binary(tmp_path, "vendor/bin/phpcs")
+
+    def fake_run(args, cwd):
+        if "phpstan" in args[0]:
+            return subprocess.CompletedProcess(args, 0, stdout=_report({}), stderr="")
+        file_path = tmp_path / "Model" / "Thing.php"
+        warnings = [
+            {"message": f"warning {i}", "type": "WARNING", "line": i}
+            for i in range(mr.MAX_STORED_ISSUES_PER_TOOL)
+        ]
+        errors = [{"message": "real error", "type": "ERROR", "line": 999}]
+        messages = warnings + errors
+        return subprocess.CompletedProcess(
+            args, 2, stdout=_report({str(file_path): {"messages": messages}}), stderr=""
+        )
+
+    monkeypatch.setattr(mr, "_run", fake_run)
+
+    result = mr.scan(tmp_path)
+
+    assert any(i.message == "real error" for i in result.issues)
+
+
+def test_phpstan_top_level_errors_are_surfaced(tmp_path, monkeypatch):
+    (tmp_path / "phpstan.neon").write_text("parameters:\n    level: max\n")
+    _touch_binary(tmp_path, "vendor/bin/phpstan")
+
+    def fake_run(args, cwd):
+        report = json.dumps({"totals": {"errors": 1}, "errors": ["Internal error: boom"]})
+        return subprocess.CompletedProcess(args, 1, stdout=report, stderr="")
+
+    monkeypatch.setattr(mr, "_run", fake_run)
+
+    result = mr.scan(tmp_path)
+
+    phpstan_issues = [i for i in result.issues if i.tool == "phpstan"]
+    assert any("boom" in i.message for i in phpstan_issues)
+
+
+def test_phpcs_message_with_null_line_does_not_crash(tmp_path, monkeypatch):
+    (tmp_path / "phpcs.xml.dist").write_text("<ruleset><rule ref='Magento2'/></ruleset>")
+    _touch_binary(tmp_path, "vendor/bin/phpcs")
+
+    def fake_run(args, cwd):
+        if "phpstan" in args[0]:
+            return subprocess.CompletedProcess(args, 0, stdout=_report({}), stderr="")
+        file_path = tmp_path / "Model" / "Thing.php"
+        messages = [{"message": "file-level issue", "type": "ERROR", "line": None}]
+        return subprocess.CompletedProcess(
+            args, 2, stdout=_report({str(file_path): {"messages": messages}}), stderr=""
+        )
+
+    monkeypatch.setattr(mr, "_run", fake_run)
+
+    result = mr.scan(tmp_path)
+
+    assert result.phpcs.scanned is True
+    assert any(i.line == 0 for i in result.issues)
+
+
 def test_combined_issue_count_includes_both_tools(tmp_path, monkeypatch):
     (tmp_path / "phpcs.xml.dist").write_text("<ruleset><rule ref='Magento2'/></ruleset>")
     (tmp_path / "phpstan.neon").write_text("parameters:\n    level: max\n")

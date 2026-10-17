@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import timedelta
@@ -42,7 +43,8 @@ def _fetch(url: str) -> str:
 
 
 def _fetch_php_requirement(version: str) -> str | None:
-    url = f"https://raw.githubusercontent.com/magento/magento2/{version}/composer.json"
+    safe_version = urllib.parse.quote(version, safe="")
+    url = f"https://raw.githubusercontent.com/magento/magento2/{safe_version}/composer.json"
     try:
         data: Any = json.loads(_fetch(url))
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):

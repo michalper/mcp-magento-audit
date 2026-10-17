@@ -33,6 +33,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ._process import run as _run_process
+
 STANDARD = "Magento2"
 FALLBACK_TARGET = "app/code"
 TIMEOUT_SECONDS = 120
@@ -67,9 +69,7 @@ class ModuleRiskResult:
 
 
 def _run(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 # nosec B603 - fixed argv, no shell
-        args, cwd=cwd, capture_output=True, text=True, timeout=TIMEOUT_SECONDS
-    )
+    return _run_process(args, cwd, TIMEOUT_SECONDS)
 
 
 def _relative(file_path: str, project_path: Path) -> str:
@@ -97,7 +97,7 @@ def _parse_phpcs_report(stdout: str, project_path: Path) -> tuple[Issue, ...]:
                 Issue(
                     tool="phpcs",
                     file=relative,
-                    line=int(message.get("line", 0)),
+                    line=int(message.get("line") or 0),
                     severity=str(message.get("type", "")).lower(),
                     source=str(message.get("source", "")),
                     message=str(message.get("message", "")),
@@ -122,6 +122,18 @@ def _parse_phpstan_report(stdout: str, project_path: Path) -> tuple[Issue, ...]:
                     message=str(message.get("message", "")),
                 )
             )
+    # Generic errors not attached to a specific file (e.g. config problems,
+    # autoload failures) — not tied to one module's code, but still a real
+    # finding that would otherwise silently vanish.
+    for generic_error in report.get("errors") or []:
+        message = (
+            str(generic_error.get("message", generic_error))
+            if isinstance(generic_error, dict)
+            else str(generic_error)
+        )
+        issues.append(
+            Issue(tool="phpstan", file="", line=0, severity="error", source="", message=message)
+        )
     return tuple(issues)
 
 
@@ -199,14 +211,19 @@ def _run_phpstan(project_path: Path) -> tuple[ToolRun, tuple[Issue, ...]]:
     )
 
 
+def _cap(issues: tuple[Issue, ...]) -> tuple[Issue, ...]:
+    """Caps the stored issues, keeping errors over warnings when truncating
+    (insertion order alone could bury a real error behind earlier warnings)."""
+    prioritized = sorted(issues, key=lambda i: i.severity != "error")
+    return tuple(prioritized[:MAX_STORED_ISSUES_PER_TOOL])
+
+
 def scan(project_path: Path) -> ModuleRiskResult:
     phpcs_run, phpcs_issues = _run_phpcs(project_path)
     phpstan_run, phpstan_issues = _run_phpstan(project_path)
 
     issue_count = len(phpcs_issues) + len(phpstan_issues)
-    issues = (
-        phpcs_issues[:MAX_STORED_ISSUES_PER_TOOL] + phpstan_issues[:MAX_STORED_ISSUES_PER_TOOL]
-    )
+    issues = _cap(phpcs_issues) + _cap(phpstan_issues)
 
     return ModuleRiskResult(
         phpcs=phpcs_run, phpstan=phpstan_run, issue_count=issue_count, issues=issues

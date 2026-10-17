@@ -115,7 +115,9 @@ def fetch_release_notes(version: str) -> dict[str, Any]:
         "Magento version by combining check_updates, module_risk and fetch_release_notes. "
         "The verdict is a list of concrete blockers (composer constraints, code that "
         "Rector flags as needing changes, phpcs/phpstan errors), each with its own reason "
-        "— not a single abstract score. ready=true only when that list is empty."
+        "— not a single abstract score. ready=true only when that list is empty, but check "
+        "'unverified' too: it lists any signal that couldn't run at all (e.g. phpstan/rector "
+        "not installed in the project), which ready=true does not account for."
     )
 )
 def upgrade_plan(path: str, target_php: str, target_magento: str) -> dict[str, Any]:
