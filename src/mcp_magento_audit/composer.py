@@ -72,6 +72,8 @@ def _load_json(path: Path) -> dict[str, Any]:
         return data
     except FileNotFoundError as e:
         raise ProjectError(f"missing file {path.name} in {path.parent}") from e
+    except OSError as e:
+        raise ProjectError(f"could not read {path.name} in {path.parent}: {e}") from e
     except json.JSONDecodeError as e:
         raise ProjectError(f"{path.name} is not valid JSON: {e}") from e
 

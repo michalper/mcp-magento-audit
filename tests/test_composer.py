@@ -68,6 +68,22 @@ def test_missing_composer_lock_raises_error(tmp_path):
         load_project(tmp_path)
 
 
+def test_unreadable_composer_json_raises_project_error_not_os_error(tmp_path):
+    # A permission error (or any other OSError besides "file missing") must
+    # surface as ProjectError too — fleet.py's batch triage relies on every
+    # per-project load failure being this one exception type, not a raw
+    # OSError subtype escaping and aborting the whole batch.
+    composer_json = tmp_path / "composer.json"
+    composer_json.write_text("{}")
+    (tmp_path / "composer.lock").write_text("{}")
+    composer_json.chmod(0o000)
+    try:
+        with pytest.raises(ProjectError, match=re.escape("could not read composer.json")):
+            load_project(tmp_path)
+    finally:
+        composer_json.chmod(0o644)
+
+
 def test_invalid_json_raises_error(tmp_path):
     (tmp_path / "composer.json").write_text("not json")
     (tmp_path / "composer.lock").write_text("{}")
