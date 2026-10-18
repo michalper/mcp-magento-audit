@@ -6,6 +6,7 @@
 
 [![CI](https://github.com/michalper/mcp-magento-audit/actions/workflows/ci.yml/badge.svg)](https://github.com/michalper/mcp-magento-audit/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/mcp-magento-audit.svg)](https://pypi.org/project/mcp-magento-audit/)
+[![michalper/mcp-magento-audit MCP server](https://glama.ai/mcp/servers/michalper/mcp-magento-audit/badges/score.svg)](https://glama.ai/mcp/servers/michalper/mcp-magento-audit)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](pyproject.toml)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
