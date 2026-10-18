@@ -8,9 +8,10 @@ from __future__ import annotations
 from dataclasses import asdict
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from mcp.server.mcpserver import MCPServer
+from pydantic import Field
 
 from .composer import ProjectError, load_project
 from .fleet import overview as build_fleet_overview
@@ -25,6 +26,16 @@ try:
     _VERSION = version("mcp-magento-audit")
 except PackageNotFoundError:
     _VERSION = ""
+
+ProjectPath = Annotated[
+    str, Field(description="Filesystem path to the Magento project root (holds composer.json).")
+]
+TargetPhp = Annotated[
+    str, Field(description='Target PHP version to check compatibility against, e.g. "8.3".')
+]
+TargetMagento = Annotated[
+    str, Field(description='Target Magento version to check compatibility against, e.g. "2.4.7".')
+]
 
 server = MCPServer(
     name="mcp-magento-audit",
@@ -42,10 +53,12 @@ server = MCPServer(
     description=(
         "Reads composer.json and composer.lock of the given Magento project and "
         "returns its state: Magento version, PHP requirement, package count and "
-        "the list of packages abandoned by their authors."
+        "the list of packages abandoned by their authors. Call this first for a fast, "
+        "composer-only overview before the deeper (and slower) checks like "
+        "check_updates, module_risk or upgrade_plan."
     )
 )
-def project_status(path: str) -> dict[str, Any]:
+def project_status(path: ProjectPath) -> dict[str, Any]:
     """Returns the basic state of the project at `path`."""
     try:
         project = load_project(path)
@@ -73,7 +86,9 @@ def project_status(path: str) -> dict[str, Any]:
         "that order — the result says which one was used."
     )
 )
-def check_updates(path: str, target_php: str, target_magento: str) -> dict[str, Any]:
+def check_updates(
+    path: ProjectPath, target_php: TargetPhp, target_magento: TargetMagento
+) -> dict[str, Any]:
     """Checks `path` against `target_php` and `target_magento`."""
     try:
         project = load_project(path)
@@ -118,7 +133,7 @@ def check_updates(path: str, target_php: str, target_magento: str) -> dict[str, 
         "with a reason when it can't run, instead of staying silent."
     )
 )
-def module_risk(path: str) -> dict[str, Any]:
+def module_risk(path: ProjectPath) -> dict[str, Any]:
     """Scans the custom code of the project at `path` for rule violations."""
     project_path = Path(path).expanduser().resolve()
     if not project_path.is_dir():
@@ -136,7 +151,7 @@ def module_risk(path: str) -> dict[str, Any]:
         "than silently reporting zero advisories when the check never ran."
     )
 )
-def security_audit(path: str) -> dict[str, Any]:
+def security_audit(path: ProjectPath) -> dict[str, Any]:
     """Checks the installed packages of the project at `path` for known advisories."""
     project_path = Path(path).expanduser().resolve()
     if not project_path.is_dir():
@@ -157,7 +172,7 @@ def security_audit(path: str) -> dict[str, Any]:
         "not found) rather than silently reporting zero outdated packages."
     )
 )
-def outdated_packages(path: str) -> dict[str, Any]:
+def outdated_packages(path: ProjectPath) -> dict[str, Any]:
     """Checks the installed packages of the project at `path` for available updates."""
     project_path = Path(path).expanduser().resolve()
     if not project_path.is_dir():
@@ -174,7 +189,11 @@ def outdated_packages(path: str) -> dict[str, Any]:
         "fetched, rather than guessing what a release might have contained."
     )
 )
-def fetch_release_notes(version: str) -> dict[str, Any]:
+def fetch_release_notes(
+    version: Annotated[
+        str, Field(description='Magento version to fetch release notes for, e.g. "2.4.7".')
+    ],
+) -> dict[str, Any]:
     """Fetches release notes for Magento `version` (e.g. '2.4.7')."""
     return asdict(release_notes_for_version(version))
 
@@ -196,7 +215,9 @@ def fetch_release_notes(version: str) -> dict[str, Any]:
         "security_audit/outdated_packages), which ready=true does not account for."
     )
 )
-def upgrade_plan(path: str, target_php: str, target_magento: str) -> dict[str, Any]:
+def upgrade_plan(
+    path: ProjectPath, target_php: TargetPhp, target_magento: TargetMagento
+) -> dict[str, Any]:
     """Builds an upgrade plan for `path` against `target_php` and `target_magento`."""
     try:
         project = load_project(path)
@@ -220,7 +241,16 @@ def upgrade_plan(path: str, target_php: str, target_magento: str) -> dict[str, A
         "reported with its own error instead of failing the whole batch."
     )
 )
-def fleet_overview(paths: list[str], target_php: str, target_magento: str) -> dict[str, Any]:
+def fleet_overview(
+    paths: Annotated[
+        list[str],
+        Field(
+            description="Filesystem paths to the Magento project roots to triage, one per project."
+        ),
+    ],
+    target_php: TargetPhp,
+    target_magento: TargetMagento,
+) -> dict[str, Any]:
     """Triages the projects at `paths` against `target_php` and `target_magento`."""
     return asdict(build_fleet_overview(paths, target_php=target_php, target_magento=target_magento))
 

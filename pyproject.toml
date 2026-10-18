@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Michal Per" }]
 keywords = ["mcp", "magento", "composer", "audit", "upgrade", "php"]
-dependencies = ["mcp>=2.3,<3"]
+dependencies = ["mcp>=2.3,<3", "pydantic>=2"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
