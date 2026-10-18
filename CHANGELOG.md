@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/) (pre-1.0:
 a minor bump means new features, a patch means fixes only — no stability
 guarantee yet on the exact JSON shape of tool results).
 
+## [0.4.0] - 2026-10-18
+
+### Changed
+- **Breaking:** renamed 6 of the 8 exposed MCP tool names to a consistent `verb_noun` pattern,
+  matching `check_updates`/`fetch_release_notes` (the two that already were):
+  `project_status` → `get_project_status`, `module_risk` → `scan_module_risk`,
+  `security_audit` → `audit_security`, `outdated_packages` → `check_outdated_packages`,
+  `upgrade_plan` → `build_upgrade_plan`, `fleet_overview` → `build_fleet_overview`. Flagged by
+  Glama's TDQS "Naming Consistency" check (4/5, "minor stylistic deviation") — low-risk to fix
+  now, before this had any real adoption to break. The underlying Python modules/functions
+  (`module_risk.py`, `security_audit.py`, etc.) are unchanged; only the `@server.tool` name
+  changed, verified end-to-end against a real Docker build's `tools/list` response. Anyone who
+  configured the old tool names in an MCP client needs to update them.
+
 ## [0.3.1] - 2026-10-18
 
 ### Fixed

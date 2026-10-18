@@ -2,38 +2,38 @@
 
 ## Tools
 
-All eight planned tools (`project_status`, `check_updates`, `module_risk`,
-`security_audit`, `outdated_packages`, `fetch_release_notes`, `upgrade_plan`,
-`fleet_overview`) are done.
+All eight planned tools (`get_project_status`, `check_updates`, `scan_module_risk`,
+`audit_security`, `check_outdated_packages`, `fetch_release_notes`, `build_upgrade_plan`,
+`build_fleet_overview`) are done.
 
-- [x] Rector-based dead-code/quality checks in `module_risk` (the project's own
+- [x] Rector-based dead-code/quality checks in `scan_module_risk` (the project's own
       `rector.php`, as-is — not the PHP-version compatibility check, which
       is a separate, synthetic-config signal in `check_updates`).
-- [x] `security_audit`: `composer audit` across every installed package
-      (`vendor/`, not just `app/code`), wired as blockers into `upgrade_plan`.
-- [x] `module_risk`: scan third-party `vendor/` packages of type
+- [x] `audit_security`: `composer audit` across every installed package
+      (`vendor/`, not just `app/code`), wired as blockers into `build_upgrade_plan`.
+- [x] `scan_module_risk`: scan third-party `vendor/` packages of type
       `magento2-module` (not just core `magento/*`) with `phpcs` for
-      coding-standard issues (`vendor_phpcs`) — `security_audit` only covers
+      coding-standard issues (`vendor_phpcs`) — `audit_security` only covers
       known CVEs, not style/legacy-API violations. phpstan/rector
       deliberately not extended to vendor/ (noisy without the project's own
       bootstrap, and not actionable on someone else's code either way).
       Vendor-scope issues are informational only — excluded from
-      `upgrade_plan`'s blockers, since they're not the project's own code to fix.
-- [x] `outdated_packages`: shells out to the built-in `composer outdated
-      --format=json` (same pattern as `security_audit`, shares
+      `build_upgrade_plan`'s blockers, since they're not the project's own code to fix.
+- [x] `check_outdated_packages`: shells out to the built-in `composer outdated
+      --format=json` (same pattern as `audit_security`, shares
       `_process.find_composer`) to report which installed packages have a
       newer version available — a staleness/tech-debt signal independent of
-      CVEs (`security_audit`) and target-version compatibility
-      (`check_updates`). Informational in `upgrade_plan`, not a blocker.
-- [x] `fleet_overview`: triages many project directories at once ("which of
+      CVEs (`audit_security`) and target-version compatibility
+      (`check_updates`). Informational in `build_upgrade_plan`, not a blocker.
+- [x] `build_fleet_overview`: triages many project directories at once ("which of
       these N stores can be upgraded today") — the third differentiator the
       README advertises over plain `composer audit`. Deliberately lightweight
-      (only `check_updates` per project, not the full `upgrade_plan`):
-      module_risk's phpcs/phpstan/rector and security_audit's/
-      outdated_packages' composer calls are each seconds-to-minutes and
+      (only `check_updates` per project, not the full `build_upgrade_plan`):
+      scan_module_risk's phpcs/phpstan/rector and audit_security's/
+      check_outdated_packages' composer calls are each seconds-to-minutes and
       don't scale across a fleet in one call. A project that fails to load
       is reported with its own error rather than failing the whole batch.
-- [x] `module_risk`: `object_manager_misuse` — a plain regex scan over
+- [x] `scan_module_risk`: `object_manager_misuse` — a plain regex scan over
       `app/code`'s `.php`/`.phtml` files for `ObjectManager::getInstance()`.
       Correction after checking `magento/magento-coding-standard`'s own
       source: there is no `Magento2.Classes.ObjectManager` sniff (an
@@ -43,17 +43,17 @@ All eight planned tools (`project_status`, `check_updates`, `module_risk`,
       `.phtml` templates — not in Model/Block/Helper classes, arguably the
       more harmful case since it bypasses constructor DI in business logic.
       No subprocess, so no "tool not found" failure mode.
-- [x] `module_risk`: `core_overrides` — flags `app/code` classes that
+- [x] `scan_module_risk`: `core_overrides` — flags `app/code` classes that
       redeclare a class already present in `vendor/magento/*` under the
       exact same fully qualified name (a copy-pasted core file, not a
       legitimate `di.xml` preference/plugin, which reference the original
       class rather than duplicate it). `severity="error"`, so — unlike
-      `object_manager_misuse` — it *does* become an `upgrade_plan` blocker.
+      `object_manager_misuse` — it *does* become a `build_upgrade_plan` blocker.
       Indexes every class in `vendor/magento/*` once by bare class name (an
       O(1) dict lookup per `app/code` candidate, not a filesystem walk per
       candidate — confirmed fast against a real ~8500-class core tree,
       ~1.3s). `scanned=false` only if there's no `vendor/magento` at all.
-- [x] ~~`module_risk`: flag admin controller actions missing `_isAllowed()`
+- [x] ~~`scan_module_risk`: flag admin controller actions missing `_isAllowed()`
       (or an always-`true` stub)~~ — **declined** after checking against a
       real Magento core checkout, *before* writing any code: (1) `return
       true;` in `_isAllowed()` is a legitimate pattern core itself uses
@@ -73,11 +73,11 @@ All eight planned tools (`project_status`, `check_updates`, `module_risk`,
       Section,Ajax}` directly, no `_isAllowed()`/ACL equivalent exists for
       the customer/frontend area at all, so the original item's mention of
       "customer-area action classes" was itself a wrong assumption.)
-- [x] ~~`module_risk`: flag empty `catch (...) {}` blocks and discouraged
+- [x] ~~`scan_module_risk`: flag empty `catch (...) {}` blocks and discouraged
       debug calls (`var_dump`/`print_r`/`echo`/`die`)~~ — checked against
       `magento/magento-coding-standard`'s own source before writing any code:
       2 of 3 sub-items are **already fully covered** by the `phpcs` scan
-      `module_risk` already runs, so building them again would be pure
+      `scan_module_risk` already runs, so building them again would be pure
       duplication: empty catch blocks → `Magento2.CodeAnalysis.EmptyBlock`
       (core itself suppresses it with `phpcs:ignore` in 23 places — proof the
       sniff fires), `var_dump`/`print_r` → `Magento2.Functions.
@@ -90,7 +90,7 @@ All eight planned tools (`project_status`, `check_updates`, `module_risk`,
       collection access" either — those need real dataflow analysis, not
       AST/pattern matching, and would be too false-positive-prone at the
       level this project operates.
-- [x] `module_risk`: `dangling_references` — flags `app/code`'s own `di.xml`
+- [x] `scan_module_risk`: `dangling_references` — flags `app/code`'s own `di.xml`
       (`preference`/`plugin`), `events.xml` (`observer`), `crontab.xml`
       (`job`), layout XML (`block`/`uiComponent`), `indexer.xml`, and
       `schema.graphqls` (`@resolver`) naming a PHP class that doesn't
@@ -101,7 +101,7 @@ All eight planned tools (`project_status`, `check_updates`, `module_risk`,
       true noise rate ≈0% — the only hits were 2-3 likely-genuine-but-
       harmless typos already present in core's own di.xml, reproduced
       independently with the actual shipped implementation, not just the
-      verification script). `severity="warning"`, not an `upgrade_plan`
+      verification script). `severity="warning"`, not a `build_upgrade_plan`
       blocker — not confident enough yet in a zero-false-positive rate on
       arbitrary agency code (unlike core's own, heavily-reviewed XML) to
       block an upgrade on it. Handles PHP's generated `\Proxy`/`\Interceptor`
@@ -112,9 +112,9 @@ All eight planned tools (`project_status`, `check_updates`, `module_risk`,
 - [x] `release_notes.py`'s GitHub API call now sends `Authorization: Bearer`
       when `GITHUB_TOKEN`/`GH_TOKEN` is set in the environment — raises the
       60/hour unauthenticated rate limit to 5000/hour. Documented in README.
-- [x] Documented in README that every subprocess-based check (`module_risk`'s
-      phpcs/phpstan/rector, `code_compatibility`, `security_audit`,
-      `outdated_packages`) needs PHP/Composer reachable from wherever this
+- [x] Documented in README that every subprocess-based check (`scan_module_risk`'s
+      phpcs/phpstan/rector, `code_compatibility`, `audit_security`,
+      `check_outdated_packages`) needs PHP/Composer reachable from wherever this
       MCP server itself runs — a real gap for projects developed exclusively
       inside Docker/DDEV/Warden/Lando, where `scanned=false` can otherwise
       read as "found nothing" rather than "couldn't check".
@@ -122,8 +122,8 @@ All eight planned tools (`project_status`, `check_updates`, `module_risk`,
       `_process.run()` — closes the Docker/DDEV gap above more completely
       than documentation alone. Turned out to need only one central change,
       not one per call site, since every one of the 4 modules
-      (`module_risk`, `php_compatibility`, `security_audit`,
-      `outdated_packages`) already funneled through this single shared
+      (`scan_module_risk`, `php_compatibility`, `audit_security`,
+      `check_outdated_packages`) already funneled through this single shared
       `run()`. Two things beyond just prepending the prefix were needed for
       it to actually work against the common case (DDEV): (1) host-absolute
       paths like `vendor/bin/phpcs` are meaningless inside a container, so
@@ -135,7 +135,7 @@ All eight planned tools (`project_status`, `check_updates`, `module_risk`,
       back to the bare name `composer` instead, trusting the container's own
       PATH. Both only activate when the env var is set — zero behavior change
       otherwise, confirmed by the full existing test suite passing unchanged.
-- [x] ~~`module_risk`: flag `module.xml` `<sequence>` entries missing for
+- [x] ~~`scan_module_risk`: flag `module.xml` `<sequence>` entries missing for
       modules a module's own code actually uses~~ — **declined** after
       checking against `Magento_Sales` (core's own flagship module, heavily
       tested, definitely working correctly in production): it references
@@ -164,7 +164,7 @@ All eight planned tools (`project_status`, `check_updates`, `module_risk`,
 ## Housekeeping
 
 - [x] Polish the README further: badges (license, Python version, ruff, last commit) and
-      a trimmed `upgrade_plan` example transcript.
+      a trimmed `build_upgrade_plan` example transcript.
 - [x] Add `CONTRIBUTING.md`.
 - [x] Add `SECURITY.md`.
 - [x] Test coverage measurement (`pytest-cov`) — wired into `pyproject.toml` and CI.
