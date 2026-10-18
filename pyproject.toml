@@ -1,6 +1,6 @@
 [project]
 name = "mcp-magento-audit"
-version = "0.3.1"
+version = "0.4.0"
 description = "MCP server for auditing Magento projects: update compatibility, module quality, dependency security"
 readme = "README.md"
 requires-python = ">=3.12"
