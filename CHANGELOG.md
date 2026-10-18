@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/) (pre-1.0:
 a minor bump means new features, a patch means fixes only — no stability
 guarantee yet on the exact JSON shape of tool results).
 
+## [0.3.1] - 2026-10-18
+
+### Fixed
+- Every tool's `path`/`target_php`/`target_magento`/`version`/`paths` parameter now carries a
+  real description (`Annotated[str, Field(description=...)]`) instead of a bare, undocumented
+  type — found via Glama's per-tool Tool Definition Quality Score, which flagged `project_status`
+  at a B (3.4/5.0) with "0% schema description coverage" while every other tool scored A.
+  `pydantic` added as an explicit dependency (was already transitive via `mcp`, but this is the
+  first place this project's own code imports it).
+- `project_status`'s description now explicitly frames it as the fast, composer-only overview
+  to call before `check_updates`/`module_risk`/`upgrade_plan` — TDQS's own stated gap was "no
+  mention of the alternatives... or when one should be preferred over this one."
+
 ## [0.3.0] - 2026-10-17
 
 ### Added
